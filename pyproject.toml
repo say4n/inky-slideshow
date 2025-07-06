@@ -1,0 +1,70 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "inky-slideshow"
+dynamic = ["version"]
+description = 'slideshow of images for inky impression (PIM 773)'
+readme = "README.md"
+requires-python = ">=3.8"
+license = "MIT"
+keywords = []
+authors = [
+  { name = "say4n", email = "github@sayan.page" },
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Programming Language :: Python :: Implementation :: PyPy",
+]
+dependencies = []
+
+[project.urls]
+Documentation = "https://github.com/say4n/inky-slideshow#readme"
+Issues = "https://github.com/say4n/inky-slideshow/issues"
+Source = "https://github.com/say4n/inky-slideshow"
+
+[tool.hatch.version]
+path = "src/inky_slideshow/__about__.py"
+
+[tool.hatch.envs.types]
+extra-dependencies = [
+  "mypy>=1.0.0",
+]
+[tool.hatch.envs.types.scripts]
+check = "mypy --install-types --non-interactive {args:src/inky_slideshow tests}"
+
+[tool.hatch.envs.default]
+dependencies = [
+  "inky",
+  "click",
+]
+
+[tool.hatch.envs.default.scripts]
+slideshow = "python src/inky_slideshow/slideshow.py"
+
+[tool.coverage.run]
+source_pkgs = ["inky_slideshow", "tests"]
+branch = true
+parallel = true
+omit = [
+  "src/inky_slideshow/__about__.py",
+]
+
+[tool.coverage.paths]
+inky_slideshow = ["src/inky_slideshow"]
+tests = ["tests"]
+
+[tool.coverage.report]
+exclude_lines = [
+  "no cov",
+  "if __name__ == .__main__.:",
+  "if TYPE_CHECKING:",
+]
