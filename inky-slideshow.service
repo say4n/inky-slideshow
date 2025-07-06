@@ -1,0 +1,10 @@
+ [Unit]
+ Description=Inky Slideshow Service
+ After=multi-user.target
+
+ [Service]
+ Type=idle
+ ExecStart=/home/linuxbrew/.linuxbrew/bin/hatch /home/sayan/inky-slideshow/src/inky_slideshow/slideshow.py /home/sayan/images
+
+ [Install]
+ WantedBy=multi-user.target
