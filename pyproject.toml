@@ -48,7 +48,7 @@ dependencies = [
 ]
 
 [tool.hatch.envs.default.scripts]
-slideshow = "python src/inky_slideshow/slideshow.py"
+slideshow = "python src/inky_slideshow/slideshow.py {args:--type spectra73}"
 
 [tool.coverage.run]
 source_pkgs = ["inky_slideshow", "tests"]

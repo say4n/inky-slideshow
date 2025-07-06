@@ -1,20 +1,32 @@
+from glob import glob
 import click
 from inky.auto import auto
 from PIL import Image
 
-def main():
-    inky_display = auto()
+
+@click.command()
+@click.argument("path", type=click.Path(exists=True))
+def main(path):
+    inky_display = auto(ask_user=True)
     inky_display.set_border(inky_display.WHITE)
 
-    # Load an image
-    image = Image.open("path/to/your/image.png").convert("RGB")
+    images = []
 
-    # Resize the image to fit the display
-    image = image.resize(inky_display.resolution)
+    allowed_extensions = [".png", ".jpg", ".jpeg"]
 
-    # Display the image
-    inky_display.set_image(image)
-    inky_display.show()
+    for ext in allowed_extensions:
+        images.extend(glob(f"{path}/*{ext}"))
+
+    index = 0
+
+    while True:
+        current_image = images[index % len(images)]
+        image = Image.open(current_image).convert("RGB")
+        image = image.resize(inky_display.resolution)
+        inky_display.set_image(image)
+        inky_display.show()
+        index += 1
+
 
 if __name__ == "__main__":
     main()
