@@ -5,7 +5,7 @@
  [Service]
  Type=exec
  WorkingDirectory=/home/sayan/inky-slideshow/
- ExecStart=/home/linuxbrew/.linuxbrew/bin/hatch slideshow /home/sayan/images
+ ExecStart=/home/linuxbrew/.linuxbrew/bin/hatch run slideshow /home/sayan/images
 
  [Install]
  WantedBy=multi-user.target
