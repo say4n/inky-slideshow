@@ -45,6 +45,7 @@ check = "mypy --install-types --non-interactive {args:src/inky_slideshow tests}"
 dependencies = [
   "inky",
   "click",
+  "loguru",
 ]
 
 [tool.hatch.envs.default.scripts]
