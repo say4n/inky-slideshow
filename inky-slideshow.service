@@ -3,8 +3,9 @@
  After=multi-user.target
 
  [Service]
- Type=idle
- ExecStart=/home/linuxbrew/.linuxbrew/bin/hatch /home/sayan/inky-slideshow/src/inky_slideshow/slideshow.py /home/sayan/images
+ Type=exec
+ WorkingDirectory=/home/sayan/inky-slideshow/
+ ExecStart=/home/linuxbrew/.linuxbrew/bin/hatch slideshow /home/sayan/images
 
  [Install]
  WantedBy=multi-user.target
