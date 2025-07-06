@@ -2,6 +2,8 @@
 
 slideshow of images for inky impression (PIM 773)
 
+![](assets/demo.jpg)
+
 -----
 
 ## Table of Contents
