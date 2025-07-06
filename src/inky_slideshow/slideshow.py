@@ -1,4 +1,5 @@
 from glob import glob
+import time
 import click
 from inky.auto import auto
 from PIL import Image
@@ -26,6 +27,8 @@ def main(path):
         inky_display.set_image(image)
         inky_display.show()
         index += 1
+
+        time.sleep(60)
 
 
 if __name__ == "__main__":
