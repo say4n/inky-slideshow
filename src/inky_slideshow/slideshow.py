@@ -36,7 +36,7 @@ def main(path):
         image = image.resize(inky_display.resolution)
         inky_display.set_image(image)
         inky_display.show()
-        index += 1
+        index = (index + 1) % len(images)
 
         logger.info("Waiting for 60 seconds before displaying the next image...")
         time.sleep(60)
