@@ -7,7 +7,7 @@ name = "inky-slideshow"
 dynamic = ["version"]
 description = 'slideshow of images for inky impression (PIM 773)'
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 license = "MIT"
 keywords = []
 authors = [
@@ -16,15 +16,20 @@ authors = [
 classifiers = [
   "Development Status :: 4 - Beta",
   "Programming Language :: Python",
-  "Programming Language :: Python :: 3.8",
-  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: Implementation :: CPython",
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
-dependencies = []
+dependencies = [
+  "click",
+  "Flask>=2.0",
+  "inky",
+  "loguru",
+  "Pillow",
+  "Werkzeug",
+]
 
 [project.urls]
 Documentation = "https://github.com/say4n/inky-slideshow#readme"
@@ -46,10 +51,30 @@ dependencies = [
   "inky",
   "click",
   "loguru",
+  "Flask>=2.0",
+  "Pillow",
+  "pytest",
 ]
 
 [tool.hatch.envs.default.scripts]
-slideshow = "python src/inky_slideshow/slideshow.py {args:--type spectra73}"
+slideshow = "python src/inky_slideshow/slideshow.py {args:/home/sayan/images}"
+
+[tool.hatch.envs.test]
+installer = "uv"
+skip-install = true
+dependencies = [
+  "click",
+  "Flask>=2.0",
+  "loguru",
+  "Pillow",
+  "pytest",
+]
+
+[tool.hatch.envs.test.env-vars]
+PYTHONPATH = "src"
+
+[tool.hatch.envs.test.scripts]
+test = "pytest {args:tests}"
 
 [tool.coverage.run]
 source_pkgs = ["inky_slideshow", "tests"]
