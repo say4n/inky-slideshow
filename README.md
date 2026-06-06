@@ -2,7 +2,7 @@
 
 slideshow of images for inky impression (PIM 773)
 
-![](assets/demo.jpg)
+![inky frame with a picture inside a photo frame](assets/demo.jpg)
 
 -----
 

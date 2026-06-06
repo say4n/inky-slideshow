@@ -39,14 +39,8 @@ Source = "https://github.com/say4n/inky-slideshow"
 [tool.hatch.version]
 path = "src/inky_slideshow/__about__.py"
 
-[tool.hatch.envs.types]
-extra-dependencies = [
-  "mypy>=1.0.0",
-]
-[tool.hatch.envs.types.scripts]
-check = "mypy --install-types --non-interactive {args:src/inky_slideshow tests}"
-
 [tool.hatch.envs.default]
+installer = "uv"
 dependencies = [
   "inky",
   "click",
@@ -82,17 +76,6 @@ branch = true
 parallel = true
 omit = [
   "src/inky_slideshow/__about__.py",
-]
-
-[tool.coverage.paths]
-inky_slideshow = ["src/inky_slideshow"]
-tests = ["tests"]
-
-[tool.coverage.report]
-exclude_lines = [
-  "no cov",
-  "if __name__ == .__main__.:",
-  "if TYPE_CHECKING:",
 ]
 
 [tool.hatch.build.targets.wheel]
