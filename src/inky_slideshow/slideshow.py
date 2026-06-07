@@ -43,6 +43,11 @@ INKY_YELLOW = "#facc15"
 INKY_RED = "#dc2626"
 INKY_GREEN = "#16a34a"
 INKY_ORANGE = "#ea580c"
+INKY_MUTED_BLUE = "#a5b4d6"
+INKY_MUTED_YELLOW = "#ded49a"
+INKY_MUTED_RED = "#d8aaa6"
+INKY_MUTED_GREEN = "#a7c4ad"
+INKY_MUTED_ORANGE = "#dec0a2"
 INKY_DISPLAY_PALETTE = (
     (255, 255, 255),
     (0, 0, 0),
@@ -465,9 +470,9 @@ def _draw_panel(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], accen
     x1, y1, x2, y2 = box
     draw.rounded_rectangle(box, radius=12, outline=INKY_BLACK, width=3, fill="white")
     inset = 7
-    spacing = 5 if density == "light" else 4
-    radius = 2
-    _draw_halftone(draw, (x1 + inset, y1 + inset, x2 - inset, y2 - inset), spacing=spacing, radius=radius, fill=accent)
+    spacing = 4 if density == "light" else 3
+    radius = 2 if density == "light" else 2
+    _draw_halftone(draw, (x1 + inset, y1 + inset, x2 - inset, y2 - inset), spacing=spacing, radius=radius, fill=_muted_accent(accent))
 
 
 def _draw_halftone(
@@ -483,6 +488,16 @@ def _draw_halftone(
         shift = spacing // 2 if (row + offset) % 2 else 0
         for x in range(x1 + shift, x2, spacing):
             draw.ellipse((x, y, x + radius, y + radius), fill=fill)
+
+
+def _muted_accent(accent: str) -> str:
+    return {
+        INKY_BLUE: INKY_MUTED_BLUE,
+        INKY_YELLOW: INKY_MUTED_YELLOW,
+        INKY_RED: INKY_MUTED_RED,
+        INKY_GREEN: INKY_MUTED_GREEN,
+        INKY_ORANGE: INKY_MUTED_ORANGE,
+    }.get(accent, accent)
 
 
 def _draw_current_card(
@@ -552,7 +567,7 @@ def _draw_time_cell(
 ) -> None:
     x1, y1, x2, y2 = box
     draw.rounded_rectangle(box, radius=8, outline=INKY_BLACK, width=2, fill="white")
-    _draw_halftone(draw, (x1 + 6, y1 + 6, x2 - 6, y2 - 6), spacing=5, radius=2, fill=accent, offset=1)
+    _draw_halftone(draw, (x1 + 6, y1 + 6, x2 - 6, y2 - 6), spacing=4, radius=2, fill=_muted_accent(accent), offset=1)
     draw.text((x1 + 12, y1 + 13), label, font=label_font, fill=INKY_BLACK, anchor="lt")
     _draw_fitted_text(draw, value, (x1 + 12, y1 + 30, x2 - 10, y2 - 8), value_font, INKY_BLACK, "lb")
 
@@ -569,7 +584,7 @@ def _draw_info_card(
 ) -> None:
     x1, y1, x2, y2 = box
     draw.rounded_rectangle(box, radius=10, outline=INKY_BLACK, width=2, fill="white")
-    _draw_halftone(draw, (x1 + 6, y1 + 6, x2 - 6, y1 + 27), spacing=5, radius=2, fill=accent)
+    _draw_halftone(draw, (x1 + 6, y1 + 6, x2 - 6, y1 + 27), spacing=4, radius=2, fill=_muted_accent(accent))
     label_font = _font(13 if not compact else 12, "Bold")
     value_font = _font(25 if not compact else 20, "Black")
     detail_font = _font(14 if not compact else 12, "Medium")
@@ -584,7 +599,7 @@ def _draw_info_card(
 def _draw_footer(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], admin_url: str, now: datetime) -> None:
     x1, y1, x2, y2 = box
     draw.rounded_rectangle(box, radius=8, outline=INKY_BLACK, width=2, fill="white")
-    _draw_halftone(draw, (x1 + 6, y1 + 6, x2 - 6, y2 - 6), spacing=6, radius=2, fill=INKY_BLUE)
+    _draw_halftone(draw, (x1 + 6, y1 + 6, x2 - 6, y2 - 6), spacing=4, radius=2, fill=INKY_MUTED_BLUE)
     font = _font(14, "Bold")
     draw.text((x1 + 14, y1 + (y2 - y1) // 2), f"ADMIN {admin_url}", font=font, fill=INKY_BLACK, anchor="lm")
     draw.text((x2 - 14, y1 + (y2 - y1) // 2), f"UPDATED {now.strftime('%H:%M')}", font=font, fill=INKY_BLACK, anchor="rm")
