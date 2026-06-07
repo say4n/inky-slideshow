@@ -87,8 +87,14 @@ def test_render_weather_screen_returns_rgb_image():
         feels_like_c=8.2,
         weather_code=0,
         wind_mph=6.1,
+        humidity_percent=60,
         uv_index=1.2,
         air_quality_index=2,
+        today_low_c=8,
+        today_high_c=14,
+        tomorrow_low_c=7,
+        tomorrow_high_c=13,
+        tomorrow_weather_code=2,
         sunrise="2026-04-13T06:07",
         sunset="2026-04-13T19:54",
         hourly=[{"time": "2026-04-13T18:00", "weather_code": 0}],
@@ -108,6 +114,7 @@ def test_parse_weather_uses_current_daily_hourly_and_air_quality():
             "apparent_temperature": 8,
             "weather_code": 0,
             "wind_speed_10m": 6,
+            "relative_humidity_2m": 61,
         },
         "hourly": {
             "time": ["2000-01-01T00:00", "2999-01-01T01:00"],
@@ -118,6 +125,9 @@ def test_parse_weather_uses_current_daily_hourly_and_air_quality():
         "daily": {
             "sunrise": ["2026-04-13T06:07"],
             "sunset": ["2026-04-13T19:54"],
+            "temperature_2m_min": [7, 9],
+            "temperature_2m_max": [14, 16],
+            "weather_code": [0, 61],
         },
     }
     air_quality = {
@@ -133,6 +143,12 @@ def test_parse_weather_uses_current_daily_hourly_and_air_quality():
     assert snapshot.temperature_c == 10
     assert snapshot.feels_like_c == 8
     assert snapshot.wind_mph == 6
+    assert snapshot.humidity_percent == 61
+    assert snapshot.today_low_c == 7
+    assert snapshot.today_high_c == 14
+    assert snapshot.tomorrow_low_c == 9
+    assert snapshot.tomorrow_high_c == 16
+    assert snapshot.tomorrow_weather_code == 61
     assert snapshot.sunrise == "2026-04-13T06:07"
     assert snapshot.sunset == "2026-04-13T19:54"
     assert snapshot.hourly[0]["weather_code"] == 2
