@@ -448,23 +448,54 @@ def render_weather_screen(
         return render_weather_screen_pillow(resolution, config, snapshot, now)
 
 
+_playwright_context = None
+_playwright_browser = None
+_playwright_page = None
+
+def _get_playwright_page(resolution: tuple[int, int]):
+    global _playwright_context, _playwright_browser, _playwright_page
+    from playwright.sync_api import sync_playwright
+
+    if _playwright_context is None:
+        _playwright_context = sync_playwright().start()
+        _playwright_browser = _playwright_context.chromium.launch(headless=True, args=["--no-sandbox"])
+        _playwright_page = _playwright_browser.new_page(viewport={"width": resolution[0], "height": resolution[1]}, device_scale_factor=1)
+
+    if _playwright_page.viewport_size["width"] != resolution[0] or _playwright_page.viewport_size["height"] != resolution[1]:
+        _playwright_page.set_viewport_size({"width": resolution[0], "height": resolution[1]})
+
+    return _playwright_page
+
 def render_weather_screen_html(
     resolution: tuple[int, int],
     config: AppConfig,
     snapshot: WeatherSnapshot | None,
     now: datetime | None = None,
 ) -> Image.Image:
-    from playwright.sync_api import sync_playwright
-
     html = render_weather_html(resolution, config, snapshot, now)
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True, args=["--no-sandbox"])
-        try:
-            page = browser.new_page(viewport={"width": resolution[0], "height": resolution[1]}, device_scale_factor=1)
-            page.set_content(html, wait_until="networkidle")
-            png_bytes = page.screenshot(type="png", full_page=False)
-        finally:
-            browser.close()
+    try:
+        page = _get_playwright_page(resolution)
+        page.set_content(html, wait_until="networkidle")
+        png_bytes = page.screenshot(type="png", full_page=False)
+    except Exception:
+        global _playwright_context, _playwright_browser, _playwright_page
+        if _playwright_page:
+            try: _playwright_page.close()
+            except Exception: pass
+        if _playwright_browser:
+            try: _playwright_browser.close()
+            except Exception: pass
+        if _playwright_context:
+            try: _playwright_context.stop()
+            except Exception: pass
+        _playwright_page = None
+        _playwright_browser = None
+        _playwright_context = None
+        
+        page = _get_playwright_page(resolution)
+        page.set_content(html, wait_until="networkidle")
+        png_bytes = page.screenshot(type="png", full_page=False)
+
     return Image.open(io.BytesIO(png_bytes)).convert("RGB")
 
 
