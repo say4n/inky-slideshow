@@ -6,6 +6,7 @@ REPO_REF="${INKY_REPO_REF:-main}"
 SERVICE_NAME="${INKY_SERVICE_NAME:-inky-slideshow}"
 SERVICE_USER="${INKY_SERVICE_USER:-${SUDO_USER:-$(id -un)}}"
 SERVICE_HOME="$(getent passwd "${SERVICE_USER}" | cut -d: -f6)"
+INSTALLER_REEXEC="${INKY_INSTALLER_REEXEC:-0}"
 
 if [[ -z "${SERVICE_HOME}" ]]; then
   echo "Could not determine home directory for ${SERVICE_USER}" >&2
@@ -62,19 +63,34 @@ run_as_service_user() {
 
 install_os_packages() {
   local missing=()
+  local python_dev_package="python3-dev"
   command -v git >/dev/null 2>&1 || missing+=(git)
   command -v python3 >/dev/null 2>&1 || missing+=(python3)
   python3 -m venv --help >/dev/null 2>&1 || missing+=(python3-venv)
 
+  if command -v python3 >/dev/null 2>&1; then
+    python_dev_package="$(python3 - <<'PY'
+import sys
+
+print(f"python{sys.version_info.major}.{sys.version_info.minor}-dev")
+PY
+)"
+  fi
+
   if command -v apt-get >/dev/null 2>&1; then
-    "${SUDO[@]}" apt-get update
-    "${SUDO[@]}" apt-get install -y \
-      build-essential \
-      git \
-      python3 \
-      python3-dev \
-      python3-pip \
+    local apt_packages=(
+      build-essential
+      git
+      python3
+      python3-dev
+      python3-pip
       python3-venv
+    )
+    if apt-cache show "${python_dev_package}" >/dev/null 2>&1; then
+      apt_packages+=("${python_dev_package}")
+    fi
+    "${SUDO[@]}" apt-get update
+    "${SUDO[@]}" apt-get install -y "${apt_packages[@]}"
     return
   fi
 
@@ -105,6 +121,11 @@ if [[ -d "${INSTALL_DIR}/.git" ]]; then
 else
   rmdir "${INSTALL_DIR}" 2>/dev/null || true
   run_as_service_user git clone --branch "${REPO_REF}" "${REPO_URL}" "${INSTALL_DIR}"
+fi
+
+if [[ "${INSTALLER_REEXEC}" != "1" ]]; then
+  export INKY_INSTALLER_REEXEC=1
+  exec bash "${INSTALL_DIR}/scripts/install.sh"
 fi
 
 run_as_service_user python3 -m venv "${INSTALL_DIR}/.venv"
