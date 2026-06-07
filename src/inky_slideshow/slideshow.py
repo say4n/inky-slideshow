@@ -657,43 +657,112 @@ ADMIN_TEMPLATE = """
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Inky Slideshow</title>
+    <title>Inky Slideshow Console</title>
     <style>
-      :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+      
+      :root {
+        --bg: #f8f9fa;
+        --surface: #ffffff;
+        --border: #eaedf0;
+        --text-main: #111827;
+        --text-muted: #6b7280;
+        --accent: #000000;
+        --accent-hover: #374151;
+        --radius: 12px;
+        --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      
       * { box-sizing: border-box; }
-      body { margin: 0; background: #f4f4ef; color: #151515; }
-      main { max-width: 1120px; margin: 0 auto; padding: 32px 24px 48px; }
-      header { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
-      a { color: #111; font-weight: 700; text-decoration: none; }
-      h1 { font-size: 30px; line-height: 1; margin: 0; }
-      h2 { font-size: 16px; margin: 0 0 14px; }
-      section { margin: 0 0 24px; }
-      .muted { color: #666; font-size: 13px; margin: 4px 0 0; }
-      .panel { background: #fff; border: 1px solid #d9d9d2; border-radius: 8px; padding: 18px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04); }
-      .settings { display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap: 12px; align-items: end; }
-      label, .field { display: grid; gap: 6px; font-size: 13px; font-weight: 700; }
-      input { width: 100%; font: inherit; padding: 10px 11px; border: 1px solid #b8b8ae; border-radius: 6px; background: #fff; min-height: 42px; }
-      button { font: inherit; font-weight: 700; border: 1px solid #111; background: #111; color: white; padding: 10px 14px; border-radius: 6px; cursor: pointer; min-height: 42px; }
-      button.secondary { width: 100%; }
-      .orientation { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+      body { 
+        margin: 0; 
+        background: var(--bg); 
+        color: var(--text-main);
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      main { max-width: 1000px; margin: 0 auto; padding: 48px 24px; }
+      
+      header { 
+        display: flex; align-items: flex-end; justify-content: space-between; 
+        margin-bottom: 40px; border-bottom: 1px solid var(--border);
+        padding-bottom: 24px;
+      }
+      header h1 { font-size: 32px; font-weight: 800; letter-spacing: -0.02em; margin: 0; line-height: 1; }
+      header p.muted { margin: 8px 0 0; font-size: 15px; color: var(--text-muted); }
+      .weather-link { 
+        color: var(--text-main); font-weight: 600; text-decoration: none; font-size: 14px;
+        display: inline-flex; align-items: center; gap: 8px; transition: var(--transition);
+        padding: 8px 16px; border-radius: 20px; background: var(--border);
+      }
+      .weather-link:hover { background: #e5e7eb; }
+      
+      .panel { 
+        background: var(--surface); border-radius: var(--radius); 
+        padding: 32px; box-shadow: 0 4px 24px -12px rgba(0,0,0,0.05);
+        margin-bottom: 24px; border: 1px solid var(--border);
+      }
+      .panel h2 { font-size: 18px; font-weight: 700; margin: 0 0 24px; letter-spacing: -0.01em; }
+      
+      /* Form elements */
+      .settings { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 20px; }
+      label, .field { display: flex; flex-direction: column; gap: 8px; font-size: 14px; font-weight: 600; color: var(--text-muted); }
+      
+      input[type="text"], input[type="number"], input[type="file"] {
+        width: 100%; font: inherit; padding: 12px 14px; color: var(--text-main);
+        border: 1px solid #d1d5db; border-radius: 8px; background: var(--surface); 
+        transition: var(--transition);
+      }
+      input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,0,0,0.05); }
+      
+      button { 
+        font: inherit; font-size: 14px; font-weight: 600; 
+        border: 1px solid var(--accent); background: var(--accent); color: white; 
+        padding: 12px 20px; border-radius: 8px; cursor: pointer; 
+        transition: var(--transition);
+      }
+      button:hover { background: var(--accent-hover); border-color: var(--accent-hover); transform: translateY(-1px); }
+      button:active { transform: translateY(0); }
+      
+      button.secondary { 
+        background: var(--surface); color: var(--text-main); border-color: #d1d5db; 
+        padding: 8px; width: 100%; font-size: 13px;
+      }
+      button.secondary:hover { background: #f9fafb; border-color: #9ca3af; color: var(--text-main); }
+      
+      .orientation { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
       .orientation input { position: absolute; opacity: 0; pointer-events: none; }
-      .orientation label { display: block; font-size: 13px; font-weight: 700; }
-      .orientation span { display: block; text-align: center; border: 1px solid #b8b8ae; border-radius: 6px; padding: 10px 8px; background: #f8f8f5; min-height: 42px; }
-      .orientation input:checked + span { background: #111; color: #fff; border-color: #111; }
-      .upload { display: grid; grid-template-columns: 1fr 180px; gap: 12px; }
-      .photos-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-      .photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 14px; }
-      .photo { background: #fff; border: 1px solid #d5d5cd; border-radius: 8px; padding: 8px; }
-      .photo img { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: contain; background: #f2f2ed; border: 1px solid #e1e1da; border-radius: 5px; margin-bottom: 8px; }
+      .orientation span { 
+        display: flex; align-items: center; justify-content: center;
+        border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; 
+        color: var(--text-muted); cursor: pointer; transition: var(--transition);
+      }
+      .orientation input:checked + span { background: var(--accent); color: white; border-color: var(--accent); }
+      
+      .upload { display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: center; }
+      .upload input[type="file"] { padding: 9px 12px; }
+      
+      /* Photos Grid */
+      .photos-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 20px; }
+      .photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
+      .photo { 
+        background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); 
+        padding: 12px; transition: var(--transition);
+      }
+      .photo:hover { box-shadow: 0 10px 30px -10px rgba(0,0,0,0.1); transform: translateY(-2px); }
+      .photo img { 
+        display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: contain; 
+        background: #f3f4f6; border-radius: 6px; margin-bottom: 12px; 
+      }
       .photos.vertical .photo img { aspect-ratio: 10 / 16; }
-      .actions { display: grid; grid-template-columns: 1fr 1fr 1.25fr; gap: 6px; }
+      .actions { display: grid; grid-template-columns: 1fr 1fr 1.5fr; gap: 8px; }
       .photo form { display: block; }
-      .icon-button { padding: 8px 6px; min-height: 38px; }
-      @media (max-width: 900px) {
-        main { padding: 20px 14px 36px; }
-        header { display: block; }
-        .settings { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      
+      @media (max-width: 768px) {
+        .settings { grid-template-columns: 1fr 1fr; }
         .upload { grid-template-columns: 1fr; }
+        .upload button { width: 100%; }
+        header { flex-direction: column; align-items: flex-start; gap: 16px; }
       }
     </style>
   </head>
@@ -701,39 +770,45 @@ ADMIN_TEMPLATE = """
     <main>
       <header>
         <div>
-          <h1>Inky Slideshow</h1>
-          <p class="muted">Photo and weather display controls</p>
+          <h1>Inky Console</h1>
+          <p class="muted">Manage your photo gallery and weather display settings</p>
         </div>
-        <a href="/weather-screen" target="_blank">Weather Preview</a>
+        <a class="weather-link" href="/weather-screen" target="_blank">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+          Preview Display
+        </a>
       </header>
+      
       <section class="panel">
-        <h2>Settings</h2>
+        <h2>Display Configuration</h2>
         <form class="settings" action="/settings" method="post">
-          <label>Photo seconds <input name="photo_seconds" type="number" min="1" value="{{ config.photo_seconds }}"></label>
-          <label>Weather seconds <input name="weather_seconds" type="number" min="1" value="{{ config.weather_seconds }}"></label>
-          <div class="field">Frame
+          <label>Photo Duration (s) <input name="photo_seconds" type="number" min="1" value="{{ config.photo_seconds }}"></label>
+          <label>Weather Duration (s) <input name="weather_seconds" type="number" min="1" value="{{ config.weather_seconds }}"></label>
+          <div class="field">Frame Orientation
             <div class="orientation">
-              <label><input name="frame_orientation" type="radio" value="horizontal" {% if config.frame_orientation == "horizontal" %}checked{% endif %}><span>Horizontal</span></label>
-              <label><input name="frame_orientation" type="radio" value="vertical" {% if config.frame_orientation == "vertical" %}checked{% endif %}><span>Vertical</span></label>
+              <label><input name="frame_orientation" type="radio" value="horizontal" {% if config.frame_orientation == "horizontal" %}checked{% endif %}><span>Landscape</span></label>
+              <label><input name="frame_orientation" type="radio" value="vertical" {% if config.frame_orientation == "vertical" %}checked{% endif %}><span>Portrait</span></label>
             </div>
           </div>
-          <label>Location name <input name="location_name" value="{{ config.location_name }}"></label>
+          <label>City Name <input name="location_name" value="{{ config.location_name }}"></label>
           <label>Latitude <input name="latitude" type="number" step="0.0001" value="{{ config.latitude }}"></label>
           <label>Longitude <input name="longitude" type="number" step="0.0001" value="{{ config.longitude }}"></label>
-          <button type="submit">Save</button>
+          <button type="submit" style="grid-column: 1 / -1; margin-top: 8px; width: 100%; max-width: 200px;">Save Settings</button>
         </form>
       </section>
+      
       <section class="panel">
-        <h2>Upload Photo</h2>
+        <h2>Upload New Photo</h2>
         <form class="upload" action="/photos" method="post" enctype="multipart/form-data">
           <input name="photo" type="file" accept=".png,.jpg,.jpeg,.heic,.heif,image/png,image/jpeg,image/heic,image/heif" required>
-          <button type="submit">Upload</button>
+          <button type="submit">Upload Photo</button>
         </form>
       </section>
-      <section class="panel">
+      
+      <section class="panel" style="background: transparent; border: none; box-shadow: none; padding: 0;">
         <div class="photos-head">
-          <h2>Photos</h2>
-          <p class="muted">{{ photos|length }} uploaded</p>
+          <h2 style="margin:0;">Photo Gallery</h2>
+          <p class="muted" style="margin:0;">{{ photos|length }} images loaded</p>
         </div>
         {% if photos %}
         <div class="photos {{ config.frame_orientation }}">
@@ -743,21 +818,23 @@ ADMIN_TEMPLATE = """
             <div class="actions">
               <form action="{{ url_for('rotate_photo_route', filename=photo) }}" method="post">
                 <input type="hidden" name="direction" value="left">
-                <button class="secondary icon-button" type="submit" title="Rotate left">Left</button>
+                <button class="secondary" type="submit" title="Rotate left">↺</button>
               </form>
               <form action="{{ url_for('rotate_photo_route', filename=photo) }}" method="post">
                 <input type="hidden" name="direction" value="right">
-                <button class="secondary icon-button" type="submit" title="Rotate right">Right</button>
+                <button class="secondary" type="submit" title="Rotate right">↻</button>
               </form>
               <form action="{{ url_for('delete_photo', filename=photo) }}" method="post">
-                <button class="secondary icon-button" type="submit">Delete</button>
+                <button class="secondary" type="submit" style="color: #ef4444; border-color: #fca5a5;">Trash</button>
               </form>
             </div>
           </div>
           {% endfor %}
         </div>
         {% else %}
-        <p class="muted">No photos uploaded yet.</p>
+        <div class="panel" style="text-align: center; padding: 60px 20px;">
+          <p class="muted">Your gallery is empty. Upload a photo to get started.</p>
+        </div>
         {% endif %}
       </section>
     </main>
