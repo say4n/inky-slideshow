@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import html
+import io
 import json
 import math
 import random
@@ -303,7 +305,170 @@ def rotate_photo(path: Path, degrees: int) -> None:
         rotated.save(path, **save_kwargs)
 
 
+def render_weather_html(
+    resolution: tuple[int, int],
+    config: AppConfig,
+    snapshot: WeatherSnapshot | None,
+    now: datetime | None = None,
+) -> str:
+    now = now or datetime.now(ZoneInfo(LONDON_TZ))
+    london_now = now.astimezone(ZoneInfo(LONDON_TZ))
+    kolkata_now = now.astimezone(ZoneInfo(KOLKATA_TZ))
+    sunrise = _time_label(snapshot.sunrise) if snapshot else "--:--"
+    sunset = _time_label(snapshot.sunset) if snapshot else "--:--"
+    temperature = _format_temp(snapshot.temperature_c if snapshot else None)
+    feels_like = _format_temp(snapshot.feels_like_c if snapshot else None)
+    wind = f"{_format_number(snapshot.wind_mph if snapshot else None)} mph"
+    uv = _uv_label(snapshot.uv_index if snapshot else None)
+    aqi = _aqi_label(snapshot.air_quality_index if snapshot else None)
+    location = html.escape(config.location_name)
+
+    return f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    @page {{ margin: 0; }}
+    * {{ box-sizing: border-box; }}
+    html, body {{ margin: 0; width: {resolution[0]}px; height: {resolution[1]}px; overflow: hidden; background: #ffffff; }}
+    body {{
+      color: #000;
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      padding: 15px;
+    }}
+    .frame {{
+      width: 100%;
+      height: 100%;
+      border-radius: 24px;
+      border: 8px solid #000;
+      display: grid;
+      grid-template-columns: 45% 55%;
+      overflow: hidden;
+      background: #000;
+      gap: 4px;
+    }}
+    .left-panel {{
+      background: #000;
+      color: #fff;
+      padding: 30px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }}
+    .right-panel {{
+      background: #fff;
+      padding: 30px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }}
+    
+    .date {{ font-size: 32px; font-weight: 800; letter-spacing: -1px; text-transform: uppercase; line-height: 1.1; color: #fff; }}
+    .time {{ font-size: 84px; font-weight: 900; line-height: 0.9; margin-top: 10px; color: #fff; }}
+    .location {{ font-size: 24px; font-weight: 600; color: #ccc; margin-top: 4px; }}
+    
+    .sun-icon {{
+      width: 160px; height: 160px;
+      background: #FFB300;
+      border-radius: 50%;
+      align-self: center;
+      margin-top: 20px;
+      border: 12px solid #FFA000;
+    }}
+    
+    .cities {{ font-size: 16px; color: #aaa; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; margin-top: auto; }}
+    .cities span {{ color: #fff; font-weight: 900; }}
+    
+    .temp-row {{ display: flex; align-items: baseline; justify-content: space-between; border-bottom: 6px solid #000; padding-bottom: 10px; }}
+    .temp {{ font-size: 140px; font-weight: 900; line-height: 0.8; letter-spacing: -6px; color: #000; }}
+    .feels {{ font-size: 24px; font-weight: 800; text-transform: uppercase; color: #555; }}
+    
+    .metrics-grid {{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px 30px;
+      margin-top: 25px;
+      flex-grow: 1;
+    }}
+    .metric {{
+      display: flex;
+      flex-direction: column;
+      border-left: 6px solid #FFB300;
+      padding-left: 14px;
+      justify-content: center;
+    }}
+    
+    .metric .label {{ font-size: 16px; font-weight: 800; color: #555; text-transform: uppercase; letter-spacing: 1px; }}
+    .metric .value {{ font-size: 36px; font-weight: 900; color: #000; margin-top: 2px; line-height: 1; }}
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <div class="left-panel">
+      <div>
+        <div class="date">{html.escape(now.strftime("%A, %-d %b"))}</div>
+        <div class="location">{location}</div>
+        <div class="time">{html.escape(london_now.strftime("%H:%M"))}</div>
+      </div>
+      
+      <div class="sun-icon"></div>
+      
+      <div class="cities">Kolkata <span>{html.escape(kolkata_now.strftime("%H:%M"))}</span></div>
+    </div>
+    
+    <div class="right-panel">
+      <div class="temp-row">
+        <div class="temp">{html.escape(temperature)}</div>
+        <div class="feels">FL {html.escape(feels_like)}</div>
+      </div>
+      
+      <div class="metrics-grid">
+        <div class="metric sunrise"><span class="label">Sunrise</span><span class="value">{html.escape(sunrise)}</span></div>
+        <div class="metric sunset"><span class="label">Sunset</span><span class="value">{html.escape(sunset)}</span></div>
+        <div class="metric wind"><span class="label">Wind</span><span class="value">{html.escape(wind)}</span></div>
+        <div class="metric uv"><span class="label">UV Index</span><span class="value">{html.escape(uv)}</span></div>
+        <div class="metric aqi"><span class="label">Air Quality</span><span class="value">{html.escape(aqi)}</span></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>"""
+
+
 def render_weather_screen(
+    resolution: tuple[int, int],
+    config: AppConfig,
+    snapshot: WeatherSnapshot | None,
+    now: datetime | None = None,
+) -> Image.Image:
+    try:
+        return render_weather_screen_html(resolution, config, snapshot, now)
+    except Exception:
+        logger.exception("HTML weather renderer failed; falling back to Pillow renderer")
+        return render_weather_screen_pillow(resolution, config, snapshot, now)
+
+
+def render_weather_screen_html(
+    resolution: tuple[int, int],
+    config: AppConfig,
+    snapshot: WeatherSnapshot | None,
+    now: datetime | None = None,
+) -> Image.Image:
+    from playwright.sync_api import sync_playwright
+
+    html = render_weather_html(resolution, config, snapshot, now)
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True, args=["--no-sandbox"])
+        try:
+            page = browser.new_page(viewport={"width": resolution[0], "height": resolution[1]}, device_scale_factor=1)
+            page.set_content(html, wait_until="networkidle")
+            png_bytes = page.screenshot(type="png", full_page=False)
+        finally:
+            browser.close()
+    return Image.open(io.BytesIO(png_bytes)).convert("RGB")
+
+
+def render_weather_screen_pillow(
     resolution: tuple[int, int],
     config: AppConfig,
     snapshot: WeatherSnapshot | None,
@@ -318,43 +483,41 @@ def render_weather_screen(
     def s(value: int) -> int:
         return max(1, int(value * scale))
 
-    title_font = _font(s(42))
-    large_font = _font(s(64))
+    title_font = _font(s(30))
+    time_font = _font(s(48))
+    temp_font = _font(s(86))
     medium_font = _font(s(28))
     small_font = _font(s(20))
-    tiny_font = _font(s(16))
+    tiny_font = _font(s(17))
 
     draw.rectangle((s(8), s(8), width - s(8), height - s(8)), outline="black", width=s(2))
     london_now = now.astimezone(ZoneInfo(LONDON_TZ))
     kolkata_now = now.astimezone(ZoneInfo(KOLKATA_TZ))
-    draw.text((s(34), s(30)), now.strftime("%A, %-d %B"), font=title_font, fill="black", anchor="la")
-    draw.text((width - s(34), s(36)), london_now.strftime("%H:%M"), font=large_font, fill="black", anchor="ra")
-    draw.text((width - s(34), s(94)), f"London  |  Kolkata {kolkata_now.strftime('%H:%M')}", font=small_font, fill="black", anchor="ra")
+    draw.text((s(34), s(28)), now.strftime("%A, %-d %B"), font=title_font, fill="black", anchor="la")
+    draw.text((width - s(34), s(24)), london_now.strftime("%H:%M"), font=time_font, fill="black", anchor="ra")
+    draw.text((width - s(34), s(80)), f"London  |  Kolkata {kolkata_now.strftime('%H:%M')}", font=small_font, fill="black", anchor="ra")
+    draw.line((s(34), s(112), width - s(34), s(112)), fill="black", width=s(2))
 
-    _draw_weather_icon(draw, (s(120), s(190)), s(70), snapshot.weather_code if snapshot else None)
-    draw.text((s(225), s(148)), _format_temp(snapshot.temperature_c if snapshot else None), font=large_font, fill="black", anchor="la")
-    draw.text((s(230), s(214)), config.location_name, font=medium_font, fill="black", anchor="la")
-    draw.text((s(230), s(250)), f"Feels like {_format_temp(snapshot.feels_like_c if snapshot else None)}", font=small_font, fill="black", anchor="la")
+    _draw_weather_icon(draw, (s(145), s(218)), s(70), snapshot.weather_code if snapshot else None)
+    draw.text((s(250), s(160)), _format_temp(snapshot.temperature_c if snapshot else None), font=temp_font, fill="black", anchor="la")
+    draw.text((s(255), s(244)), config.location_name, font=medium_font, fill="black", anchor="la")
+    draw.text((s(255), s(284)), f"Feels like {_format_temp(snapshot.feels_like_c if snapshot else None)}", font=small_font, fill="black", anchor="la")
 
-    metric_x = s(520)
-    metric_y = s(155)
+    metric_x = s(535)
+    metric_y = s(144)
     sunrise = _time_label(snapshot.sunrise) if snapshot else "--:--"
     sunset = _time_label(snapshot.sunset) if snapshot else "--:--"
-    _draw_metric(draw, (metric_x, metric_y), "Sunrise", sunrise, medium_font, small_font, s(220), s(44))
-    _draw_metric(draw, (metric_x, metric_y + s(66)), "Sunset", sunset, medium_font, small_font, s(220), s(44))
-    _draw_metric(draw, (metric_x, metric_y + s(132)), "Wind", f"{_format_number(snapshot.wind_mph if snapshot else None)} mph", medium_font, small_font, s(220), s(44))
-    _draw_metric(draw, (metric_x, metric_y + s(198)), "UV", _uv_label(snapshot.uv_index if snapshot else None), medium_font, small_font, s(220), s(44))
+    _draw_metric(draw, (metric_x, metric_y), "Sunrise", sunrise, medium_font, small_font, s(220), s(56))
+    _draw_metric(draw, (metric_x, metric_y + s(82)), "Sunset", sunset, medium_font, small_font, s(220), s(56))
+    _draw_metric(draw, (metric_x, metric_y + s(164)), "Wind", f"{_format_number(snapshot.wind_mph if snapshot else None)} mph", medium_font, small_font, s(220), s(56))
 
-    hourly = snapshot.hourly if snapshot else []
-    strip_top = height - s(112)
-    draw.line((s(34), strip_top, width - s(34), strip_top), fill="black", width=s(2))
-    slots = hourly[:5]
-    slot_width = (width - s(68)) // max(1, len(slots) or 1)
-    for offset, item in enumerate(slots):
-        x = s(34) + slot_width * offset + slot_width // 2
-        draw.text((x, strip_top + s(22)), _hour_label(item.get("time")), font=small_font, fill="black", anchor="ma")
-        _draw_weather_icon(draw, (x, strip_top + s(58)), s(18), _optional_int(item.get("weather_code")))
-        draw.text((x, strip_top + s(92)), _format_temp(_optional_float(item.get("temperature_c"))), font=tiny_font, fill="black", anchor="ma")
+    summary_top = height - s(94)
+    draw.line((s(34), summary_top, width - s(34), summary_top), fill="black", width=s(2))
+    draw.text((s(58), summary_top + s(38)), "UV", font=small_font, fill="black", anchor="lm")
+    draw.text((s(138), summary_top + s(38)), _uv_label(snapshot.uv_index if snapshot else None), font=medium_font, fill="black", anchor="lm")
+    draw.text((s(300), summary_top + s(38)), "Air", font=small_font, fill="black", anchor="lm")
+    draw.text((s(380), summary_top + s(38)), _aqi_label(snapshot.air_quality_index if snapshot else None), font=medium_font, fill="black", anchor="lm")
+    draw.text((width - s(58), summary_top + s(38)), f"Updated {london_now.strftime('%H:%M')}", font=small_font, fill="black", anchor="rm")
 
     if snapshot is None:
         draw.text((width // 2, height - s(32)), "weather unavailable", font=tiny_font, fill="black", anchor="ma")
@@ -363,7 +526,13 @@ def render_weather_screen(
 
 
 def _font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    for font_name in ("DejaVuSans.ttf", "Arial.ttf"):
+    for font_name in (
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "DejaVuSans.ttf",
+        "Arial.ttf",
+    ):
         try:
             return ImageFont.truetype(font_name, size)
         except OSError:
@@ -471,13 +640,13 @@ def _draw_metric(
     height: int,
 ) -> None:
     x, y = origin
-    draw.rounded_rectangle((x, y, x + width, y + height), radius=max(4, height // 8), outline="black", width=max(1, height // 18))
-    draw.text((x + 12, y + height // 2), label, font=label_font, fill="black", anchor="lm")
-    draw.text((x + width - 12, y + height // 2), value, font=value_font, fill="black", anchor="rm")
+    draw.text((x, y + height // 2), label, font=label_font, fill="black", anchor="lm")
+    draw.text((x + width, y + height // 2), value, font=value_font, fill="black", anchor="rm")
+    draw.line((x, y + height, x + width, y + height), fill="black", width=max(1, height // 18))
 
 
 def _format_temp(value: float | None) -> str:
-    return "--" if value is None else f"{round(value)} deg"
+    return "--" if value is None else f"{round(value)}C"
 
 
 def _format_number(value: float | None) -> str:
@@ -520,12 +689,20 @@ def _time_label(value: str | None) -> str:
 def create_app(photo_dir: Path, config_store: ConfigStore) -> Flask:
     app = Flask(__name__)
     photo_dir.mkdir(parents=True, exist_ok=True)
+    weather_client = WeatherClient()
 
     @app.route("/", methods=["GET"])
     def index() -> str:
         config = config_store.load()
         photos = [path.name for path in list_photos(photo_dir)]
         return render_template_string(ADMIN_TEMPLATE, config=config, photos=photos)
+
+    @app.route("/weather-screen", methods=["GET"])
+    def weather_screen() -> str:
+        config = config_store.load()
+        snapshot = weather_client.fetch_or_cached(config)
+        resolution = oriented_resolution((800, 480), config.frame_orientation)
+        return render_weather_html(resolution, config, snapshot)
 
     @app.route("/settings", methods=["POST"])
     def settings() -> Response:
@@ -698,6 +875,7 @@ ADMIN_TEMPLATE = """
       body { margin: 0; background: #f4f4ef; color: #151515; }
       main { max-width: 1120px; margin: 0 auto; padding: 32px 24px 48px; }
       header { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
+      a { color: #111; font-weight: 700; text-decoration: none; }
       h1 { font-size: 30px; line-height: 1; margin: 0; }
       h2 { font-size: 16px; margin: 0 0 14px; }
       section { margin: 0 0 24px; }
@@ -737,6 +915,7 @@ ADMIN_TEMPLATE = """
           <h1>Inky Slideshow</h1>
           <p class="muted">Photo and weather display controls</p>
         </div>
+        <a href="/weather-screen" target="_blank">Weather Preview</a>
       </header>
       <section class="panel">
         <h2>Settings</h2>

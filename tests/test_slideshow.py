@@ -16,6 +16,7 @@ from inky_slideshow.slideshow import (
     managed_photo_path,
     oriented_resolution,
     parse_weather,
+    render_weather_html,
     render_weather_screen,
 )
 
@@ -100,6 +101,29 @@ def test_render_weather_screen_returns_rgb_image():
     assert image.mode == "RGB"
 
 
+def test_render_weather_html_contains_weather_layout():
+    snapshot = WeatherSnapshot(
+        fetched_at=datetime.now(timezone.utc).isoformat(),
+        location_name="London",
+        temperature_c=13,
+        feels_like_c=8,
+        weather_code=0,
+        wind_mph=11,
+        uv_index=2,
+        air_quality_index=2,
+        sunrise="2026-06-07T04:43",
+        sunset="2026-06-07T21:17",
+        hourly=[],
+    )
+
+    html = render_weather_html((800, 480), AppConfig(), snapshot, now=datetime(2026, 6, 7, 9, 23, tzinfo=timezone.utc))
+
+    assert "Sunday, 7 June" in html
+    assert "13C" in html
+    assert "Weather" not in html
+    assert "Updated 10:23" in html
+
+
 def test_parse_weather_uses_current_daily_hourly_and_air_quality():
     forecast = {
         "current": {
@@ -137,7 +161,8 @@ def test_parse_weather_uses_current_daily_hourly_and_air_quality():
     assert snapshot.hourly[0]["weather_code"] == 2
 
 
-def test_flask_routes_update_upload_and_delete(tmp_path):
+def test_flask_routes_update_upload_and_delete(monkeypatch, tmp_path):
+    monkeypatch.setattr(slideshow.WeatherClient, "fetch_or_cached", lambda self, config: None)
     photo_dir = tmp_path / "photos"
     store = ConfigStore(tmp_path / "config.json", AppConfig())
     app = create_app(photo_dir, store)
@@ -170,6 +195,10 @@ def test_flask_routes_update_upload_and_delete(tmp_path):
 
     response = client.get("/photos/test.jpg")
     assert response.status_code == 200
+
+    response = client.get("/weather-screen")
+    assert response.status_code == 200
+    assert b"Inky" not in response.data
 
     response = client.post("/photos/test.jpg/rotate", data={"direction": "right"})
     assert response.status_code == 302

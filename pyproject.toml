@@ -29,6 +29,7 @@ dependencies = [
   "loguru",
   "Pillow",
   "pillow-heif",
+  "playwright>=1.40.0",
   "Werkzeug",
 ]
 
@@ -49,6 +50,7 @@ dependencies = [
   "Flask>=2.0",
   "Pillow",
   "pillow-heif",
+  "playwright>=1.40.0",
   "pytest",
 ]
 
@@ -64,6 +66,7 @@ dependencies = [
   "loguru",
   "Pillow",
   "pillow-heif",
+  "playwright>=1.40.0",
   "pytest",
 ]
 
