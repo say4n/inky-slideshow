@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import html
 import io
 import json
-import math
 import random
 import threading
 import time
@@ -305,135 +303,7 @@ def rotate_photo(path: Path, degrees: int) -> None:
         rotated.save(path, **save_kwargs)
 
 
-def render_weather_html(
-    resolution: tuple[int, int],
-    config: AppConfig,
-    snapshot: WeatherSnapshot | None,
-    now: datetime | None = None,
-) -> str:
-    now = now or datetime.now(ZoneInfo(LONDON_TZ))
-    london_now = now.astimezone(ZoneInfo(LONDON_TZ))
-    kolkata_now = now.astimezone(ZoneInfo(KOLKATA_TZ))
-    sunrise = _time_label(snapshot.sunrise) if snapshot else "--:--"
-    sunset = _time_label(snapshot.sunset) if snapshot else "--:--"
-    temperature = _format_temp(snapshot.temperature_c if snapshot else None)
-    feels_like = _format_temp(snapshot.feels_like_c if snapshot else None)
-    wind = f"{_format_number(snapshot.wind_mph if snapshot else None)} mph"
-    uv = _uv_label(snapshot.uv_index if snapshot else None)
-    aqi = _aqi_label(snapshot.air_quality_index if snapshot else None)
-    location = html.escape(config.location_name)
 
-    return f"""<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    @page {{ margin: 0; }}
-    * {{ box-sizing: border-box; }}
-    html, body {{ margin: 0; width: {resolution[0]}px; height: {resolution[1]}px; overflow: hidden; background: #ffffff; }}
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
-    body {{
-      color: #000;
-      font-family: 'Inter', sans-serif;
-      padding: 15px;
-    }}
-    .frame {{
-      width: 100%;
-      height: 100%;
-      border-radius: 24px;
-      border: 8px solid #000;
-      display: grid;
-      grid-template-columns: 45% 55%;
-      overflow: hidden;
-      background: #000;
-      gap: 4px;
-    }}
-    .left-panel {{
-      background: #000;
-      color: #fff;
-      padding: 30px;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-    }}
-    .right-panel {{
-      background: #fff;
-      padding: 30px;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-    }}
-    
-    .date {{ font-size: 32px; font-weight: 800; letter-spacing: -1px; text-transform: uppercase; line-height: 1.1; color: #fff; }}
-    .time {{ font-size: 84px; font-weight: 900; line-height: 0.9; margin-top: 10px; color: #fff; }}
-    .location {{ font-size: 24px; font-weight: 600; color: #ccc; margin-top: 4px; }}
-    
-    .sun-icon {{
-      width: 160px; height: 160px;
-      background: #FFB300;
-      border-radius: 50%;
-      align-self: center;
-      margin-top: 20px;
-      border: 12px solid #FFA000;
-    }}
-    
-    .cities {{ font-size: 16px; color: #aaa; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; margin-top: auto; }}
-    .cities span {{ color: #fff; font-weight: 900; }}
-    
-    .temp-row {{ display: flex; align-items: baseline; justify-content: space-between; border-bottom: 6px solid #000; padding-bottom: 10px; }}
-    .temp {{ font-size: 140px; font-weight: 900; line-height: 0.8; letter-spacing: -6px; color: #000; }}
-    .feels {{ font-size: 24px; font-weight: 800; text-transform: uppercase; color: #555; }}
-    
-    .metrics-grid {{
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px 30px;
-      margin-top: 25px;
-      flex-grow: 1;
-    }}
-    .metric {{
-      display: flex;
-      flex-direction: column;
-      border-left: 6px solid #FFB300;
-      padding-left: 14px;
-      justify-content: center;
-    }}
-    
-    .metric .label {{ font-size: 16px; font-weight: 800; color: #555; text-transform: uppercase; letter-spacing: 1px; }}
-    .metric .value {{ font-size: 36px; font-weight: 900; color: #000; margin-top: 2px; line-height: 1; }}
-  </style>
-</head>
-<body>
-  <div class="frame">
-    <div class="left-panel">
-      <div>
-        <div class="date">{html.escape(now.strftime("%A, %-d %b"))}</div>
-        <div class="location">{location}</div>
-        <div class="time">{html.escape(london_now.strftime("%H:%M"))}</div>
-      </div>
-      
-      <div class="sun-icon"></div>
-      
-      <div class="cities">Kolkata <span>{html.escape(kolkata_now.strftime("%H:%M"))}</span></div>
-    </div>
-    
-    <div class="right-panel">
-      <div class="temp-row">
-        <div class="temp">{html.escape(temperature)}</div>
-        <div class="feels">FL {html.escape(feels_like)}</div>
-      </div>
-      
-      <div class="metrics-grid">
-        <div class="metric sunrise"><span class="label">Sunrise</span><span class="value">{html.escape(sunrise)}</span></div>
-        <div class="metric sunset"><span class="label">Sunset</span><span class="value">{html.escape(sunset)}</span></div>
-        <div class="metric wind"><span class="label">Wind</span><span class="value">{html.escape(wind)}</span></div>
-        <div class="metric uv"><span class="label">UV Index</span><span class="value">{html.escape(uv)}</span></div>
-        <div class="metric aqi"><span class="label">Air Quality</span><span class="value">{html.escape(aqi)}</span></div>
-      </div>
-    </div>
-  </div>
-</body>
-</html>"""
 
 
 def render_weather_screen(
@@ -442,62 +312,7 @@ def render_weather_screen(
     snapshot: WeatherSnapshot | None,
     now: datetime | None = None,
 ) -> Image.Image:
-    try:
-        return render_weather_screen_html(resolution, config, snapshot, now)
-    except Exception:
-        logger.exception("HTML weather renderer failed; falling back to Pillow renderer")
-        return render_weather_screen_pillow(resolution, config, snapshot, now)
-
-
-_playwright_context = None
-_playwright_browser = None
-_playwright_page = None
-
-def _get_playwright_page(resolution: tuple[int, int]):
-    global _playwright_context, _playwright_browser, _playwright_page
-    from playwright.sync_api import sync_playwright
-
-    if _playwright_context is None:
-        _playwright_context = sync_playwright().start()
-        _playwright_browser = _playwright_context.chromium.launch(headless=True, args=["--no-sandbox"])
-        _playwright_page = _playwright_browser.new_page(viewport={"width": resolution[0], "height": resolution[1]}, device_scale_factor=1)
-
-    if _playwright_page.viewport_size["width"] != resolution[0] or _playwright_page.viewport_size["height"] != resolution[1]:
-        _playwright_page.set_viewport_size({"width": resolution[0], "height": resolution[1]})
-
-    return _playwright_page
-
-def render_weather_screen_html(
-    resolution: tuple[int, int],
-    config: AppConfig,
-    snapshot: WeatherSnapshot | None,
-    now: datetime | None = None,
-) -> Image.Image:
-    html = render_weather_html(resolution, config, snapshot, now)
-    try:
-        page = _get_playwright_page(resolution)
-        page.set_content(html, wait_until="networkidle")
-        png_bytes = page.screenshot(type="png", full_page=False)
-    except Exception:
-        global _playwright_context, _playwright_browser, _playwright_page
-        if _playwright_page:
-            try: _playwright_page.close()
-            except Exception: pass
-        if _playwright_browser:
-            try: _playwright_browser.close()
-            except Exception: pass
-        if _playwright_context:
-            try: _playwright_context.stop()
-            except Exception: pass
-        _playwright_page = None
-        _playwright_browser = None
-        _playwright_context = None
-        
-        page = _get_playwright_page(resolution)
-        page.set_content(html, wait_until="networkidle")
-        png_bytes = page.screenshot(type="png", full_page=False)
-
-    return Image.open(io.BytesIO(png_bytes)).convert("RGB")
+    return render_weather_screen_pillow(resolution, config, snapshot, now)
 
 
 def render_weather_screen_pillow(
@@ -511,64 +326,64 @@ def render_weather_screen_pillow(
     image = Image.new("RGB", resolution, "black")
     draw = ImageDraw.Draw(image)
     width, height = resolution
-    
+
     is_vertical = height > width
     rx = int(width * 0.45) if not is_vertical else width
     ry = height if not is_vertical else int(height * 0.45)
-    
+
     if not is_vertical:
         draw.rectangle((rx, 0, width, height), fill="white")
     else:
         draw.rectangle((0, ry, width, height), fill="white")
-    
+
     london_now = now.astimezone(ZoneInfo(LONDON_TZ))
     kolkata_now = now.astimezone(ZoneInfo(KOLKATA_TZ))
-    
+
     date_font = _font(32, "Black")
     loc_font = _font(24, "Medium")
     time_font = _font(110, "Black")
     cities_font = _font(16, "Bold")
-    
+
     draw.text((40, 48), now.strftime("%A, %-d %b").upper(), font=date_font, fill="white", anchor="lt")
     draw.text((40, 88), config.location_name, font=loc_font, fill="#a1a1aa", anchor="lt")
-    
+
     sun_x = rx // 2 if not is_vertical else width // 2
     sun_y = int(height * 0.6) if not is_vertical else int(ry * 0.6)
     sun_radius = 80
-    
+
     glow_image = Image.new("RGBA", resolution, (0,0,0,0))
     glow_draw = ImageDraw.Draw(glow_image)
     glow_draw.ellipse((sun_x - sun_radius, sun_y - sun_radius, sun_x + sun_radius, sun_y + sun_radius), fill=(251, 191, 36, 102))
     glow_image = glow_image.filter(ImageFilter.GaussianBlur(80))
     image.paste(glow_image, (0, 0), glow_image)
-    
+
     draw.ellipse((sun_x - sun_radius, sun_y - sun_radius, sun_x + sun_radius, sun_y + sun_radius), fill="#fbbf24")
-    
+
     time_y = height // 2 if not is_vertical else ry // 2
     draw.text((40, time_y), london_now.strftime("%H:%M"), font=time_font, fill="white", anchor="lm")
-    
+
     bottom_y = height - 48 if not is_vertical else ry - 48
     draw.text((40, bottom_y), f"LONDON  |  KOLKATA {kolkata_now.strftime('%H:%M')}", font=cities_font, fill="#71717a", anchor="ls")
-    
+
     temp_font = _font(140, "Black")
     feels_font = _font(24, "Bold")
     label_font = _font(14, "Bold")
     val_font = _font(36, "Black")
-    
+
     temp_text = _format_temp(snapshot.temperature_c if snapshot else None)
     feels_text = f"FL {_format_temp(snapshot.feels_like_c if snapshot else None)}"
-    
+
     right_x = rx if not is_vertical else 0
     right_y = 0 if not is_vertical else ry
     right_w = width - right_x
-    
+
     temp_baseline = right_y + 160
     draw.text((right_x + 40, temp_baseline), temp_text, font=temp_font, fill="#09090b", anchor="ls")
     draw.text((right_x + right_w - 40, temp_baseline), feels_text, font=feels_font, fill="#71717a", anchor="rs")
-    
+
     divider_y = temp_baseline + 24
     draw.rectangle((right_x + 40, divider_y, right_x + right_w - 40, divider_y + 8), fill="#09090b")
-    
+
     metrics = [
         ("SUNRISE", _time_label(snapshot.sunrise) if snapshot else "--:--"),
         ("SUNSET", _time_label(snapshot.sunset) if snapshot else "--:--"),
@@ -576,7 +391,7 @@ def render_weather_screen_pillow(
         ("UV INDEX", _uv_label(snapshot.uv_index if snapshot else None)),
         ("AIR QUALITY", _aqi_label(snapshot.air_quality_index if snapshot else None)),
     ]
-    
+
     my_y = divider_y + 40
     col_w = (right_w - 80 - 24) // 2
     for i, (m_label, m_val) in enumerate(metrics):
@@ -669,11 +484,14 @@ def create_app(photo_dir: Path, config_store: ConfigStore) -> Flask:
         return render_template_string(ADMIN_TEMPLATE, config=config, photos=photos)
 
     @app.route("/weather-screen", methods=["GET"])
-    def weather_screen() -> str:
+    def weather_screen() -> Response:
         config = config_store.load()
         snapshot = weather_client.fetch_or_cached(config)
         resolution = oriented_resolution((800, 480), config.frame_orientation)
-        return render_weather_html(resolution, config, snapshot)
+        image = render_weather_screen(resolution, config, snapshot)
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
+        return Response(buf.getvalue(), mimetype="image/png")
 
     @app.route("/settings", methods=["POST"])
     def settings() -> Response:

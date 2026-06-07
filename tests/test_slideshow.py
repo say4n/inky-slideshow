@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import pytest
 from PIL import Image
 
-import inky_slideshow.slideshow as slideshow
+from inky_slideshow import slideshow
 from inky_slideshow.slideshow import (
     AppConfig,
     ConfigStore,
@@ -16,7 +16,6 @@ from inky_slideshow.slideshow import (
     managed_photo_path,
     oriented_resolution,
     parse_weather,
-    render_weather_html,
     render_weather_screen,
 )
 
@@ -100,28 +99,6 @@ def test_render_weather_screen_returns_rgb_image():
     assert image.size == (800, 480)
     assert image.mode == "RGB"
 
-
-def test_render_weather_html_contains_weather_layout():
-    snapshot = WeatherSnapshot(
-        fetched_at=datetime.now(timezone.utc).isoformat(),
-        location_name="London",
-        temperature_c=13,
-        feels_like_c=8,
-        weather_code=0,
-        wind_mph=11,
-        uv_index=2,
-        air_quality_index=2,
-        sunrise="2026-06-07T04:43",
-        sunset="2026-06-07T21:17",
-        hourly=[],
-    )
-
-    html = render_weather_html((800, 480), AppConfig(), snapshot, now=datetime(2026, 6, 7, 9, 23, tzinfo=timezone.utc))
-
-    assert "Sunday, 7 Jun" in html
-    assert "13C" in html
-    assert "Weather" not in html
-    assert "Kolkata" in html
 
 
 def test_parse_weather_uses_current_daily_hourly_and_air_quality():

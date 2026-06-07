@@ -160,9 +160,7 @@ fi
 run_as_service_user python3 -m venv "${INSTALL_DIR}/.venv"
 run_as_service_user "${INSTALL_DIR}/.venv/bin/python" -m pip install --upgrade pip wheel
 run_as_service_user "${INSTALL_DIR}/.venv/bin/python" -m pip install --upgrade "${INSTALL_DIR}"
-if ! run_as_service_user "${INSTALL_DIR}/.venv/bin/python" -m playwright install chromium; then
-  echo "Warning: Playwright Chromium install failed. Weather rendering will fall back to the Pillow renderer." >&2
-fi
+
 
 TMP_WEB_UNIT="$(mktemp)"
 TMP_DISPLAY_UNIT="$(mktemp)"
