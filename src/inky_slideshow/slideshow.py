@@ -340,33 +340,27 @@ def render_weather_screen_pillow(
     kolkata_now = now.astimezone(ZoneInfo(KOLKATA_TZ))
 
     date_font = _font(32, "Black")
-    loc_font = _font(24, "Medium")
-    time_font = _font(110, "Black")
-    cities_font = _font(16, "Bold")
+    loc_font = _font(24, "Regular")
+    time_font = _font(110, "Bold")
+    cities_font = _font(16, "Medium")
 
     draw.text((40, 48), now.strftime("%A, %-d %b").upper(), font=date_font, fill="white", anchor="lt")
-    draw.text((40, 88), config.location_name, font=loc_font, fill="#a1a1aa", anchor="lt")
+    draw.text((40, 88), config.location_name, font=loc_font, fill="white", anchor="lt")
 
-    sun_x = rx // 2 if not is_vertical else width // 2
-    sun_y = int(height * 0.6) if not is_vertical else int(ry * 0.6)
-    sun_radius = 80
+    icon_x = rx // 2 if not is_vertical else width // 2
+    icon_y = height - 160 if not is_vertical else ry - 160
 
-    glow_image = Image.new("RGBA", resolution, (0,0,0,0))
-    glow_draw = ImageDraw.Draw(glow_image)
-    glow_draw.ellipse((sun_x - sun_radius, sun_y - sun_radius, sun_x + sun_radius, sun_y + sun_radius), fill=(251, 191, 36, 102))
-    glow_image = glow_image.filter(ImageFilter.GaussianBlur(80))
-    image.paste(glow_image, (0, 0), glow_image)
+    weather_code = snapshot.weather_code if snapshot else 0
+    _draw_weather_icon(draw, icon_x, icon_y, weather_code)
 
-    draw.ellipse((sun_x - sun_radius, sun_y - sun_radius, sun_x + sun_radius, sun_y + sun_radius), fill="#fbbf24")
-
-    time_y = height // 2 if not is_vertical else ry // 2
-    draw.text((40, time_y), london_now.strftime("%H:%M"), font=time_font, fill="white", anchor="lm")
+    time_y = 130 if not is_vertical else 130
+    draw.text((40, time_y), london_now.strftime("%H:%M"), font=time_font, fill="white", anchor="lt")
 
     bottom_y = height - 48 if not is_vertical else ry - 48
-    draw.text((40, bottom_y), f"LONDON  |  KOLKATA {kolkata_now.strftime('%H:%M')}", font=cities_font, fill="#71717a", anchor="ls")
+    draw.text((40, bottom_y), f"LONDON  |  KOLKATA {kolkata_now.strftime('%H:%M')}", font=cities_font, fill="white", anchor="ls")
 
     temp_font = _font(140, "Black")
-    feels_font = _font(24, "Bold")
+    feels_font = _font(24, "Medium")
     label_font = _font(14, "Bold")
     val_font = _font(36, "Black")
 
@@ -378,11 +372,11 @@ def render_weather_screen_pillow(
     right_w = width - right_x
 
     temp_baseline = right_y + 160
-    draw.text((right_x + 40, temp_baseline), temp_text, font=temp_font, fill="#09090b", anchor="ls")
-    draw.text((right_x + right_w - 40, temp_baseline), feels_text, font=feels_font, fill="#71717a", anchor="rs")
+    draw.text((right_x + 40, temp_baseline), temp_text, font=temp_font, fill="black", anchor="ls")
+    draw.text((right_x + right_w - 40, temp_baseline), feels_text, font=feels_font, fill="black", anchor="rs")
 
     divider_y = temp_baseline + 24
-    draw.rectangle((right_x + 40, divider_y, right_x + right_w - 40, divider_y + 8), fill="#09090b")
+    draw.rectangle((right_x + 40, divider_y, right_x + right_w - 40, divider_y + 4), fill="black")
 
     metrics = [
         ("SUNRISE", _time_label(snapshot.sunrise) if snapshot else "--:--"),
@@ -399,12 +393,13 @@ def render_weather_screen_pillow(
         row = i // 2
         x = right_x + 40 + col * (col_w + 24)
         y = my_y + row * 80
-        draw.rounded_rectangle((x, y, x + 6, y + 45), radius=4, fill="#fbbf24")
-        draw.text((x + 20, y + 16), m_label, font=label_font, fill="#a1a1aa", anchor="ls")
-        draw.text((x + 20, y + 46), m_val, font=val_font, fill="#09090b", anchor="ls")
+        # Thin crisp line instead of a yellow block
+        draw.rectangle((x, y, x + 2, y + 45), fill="#fbbf24")
+        draw.text((x + 16, y + 16), m_label, font=label_font, fill="black", anchor="ls")
+        draw.text((x + 16, y + 46), m_val, font=val_font, fill="black", anchor="ls")
 
     if snapshot is None:
-        draw.text((right_x + right_w // 2, height - 48), "weather unavailable", font=_font(14, "Bold"), fill="#ef4444", anchor="ms")
+        draw.text((right_x + right_w // 2, height - 48), "weather unavailable", font=_font(14, "Bold"), fill="black", anchor="ms")
 
     return image
 
@@ -413,6 +408,52 @@ def _font(size: int, weight: str = "Regular") -> ImageFont.FreeTypeFont | ImageF
     if font_path.exists():
         return ImageFont.truetype(str(font_path), size)
     return ImageFont.load_default()
+
+def _draw_weather_icon(draw: ImageDraw.ImageDraw, cx: int, cy: int, code: int | None) -> None:
+    if code is None:
+        code = 0
+    import math
+
+    def draw_sun(x: int, y: int, radius: int = 40, rays: bool = True) -> None:
+        draw.ellipse((x - radius - 20, y - radius - 20, x + radius + 20, y + radius + 20), outline="#fbbf24", width=2)
+        draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill="#fbbf24")
+
+    def draw_cloud(x: int, y: int, fill: str = "white", outline: str = "white") -> None:
+        circles = [
+            (x - 35, y - 10, x + 35, y + 30),
+            (x - 60, y + 5, x - 15, y + 35),
+            (x + 15, y + 5, x + 60, y + 35),
+            (x - 25, y - 25, x + 25, y + 15),
+        ]
+        for bb in circles:
+            draw.ellipse(bb, fill=fill, outline=outline, width=3)
+        for (bx1, by1, bx2, by2) in circles:
+            draw.ellipse((bx1+3, by1+3, bx2-3, by2-3), fill=fill)
+
+    if code == 0:
+        draw_sun(cx, cy, radius=50)
+    elif code in (1, 2):
+        draw_sun(cx + 30, cy - 20, radius=35)
+        draw_cloud(cx - 10, cy + 10)
+    elif code == 3:
+        draw_cloud(cx, cy)
+    elif code in (45, 48): # Fog
+        draw_cloud(cx, cy - 20)
+        for i in range(3):
+            draw.line((cx - 40, cy + 25 + i*10, cx + 40, cy + 25 + i*10), fill="white", width=4)
+    elif code in range(51, 68) or code in range(80, 83): # Rain
+        draw_cloud(cx, cy - 15)
+        for i in range(-2, 3):
+            draw.line((cx + i*15, cy + 25, cx + i*15 - 10, cy + 45), fill="white", width=3)
+    elif code in range(71, 78) or code in range(85, 87): # Snow
+        draw_cloud(cx, cy - 15)
+        for i in range(-2, 3):
+            draw.ellipse((cx + i*15 - 3, cy + 30 - 3 + (i%2)*10, cx + i*15 + 3, cy + 30 + 3 + (i%2)*10), fill="white")
+    elif code >= 95: # Thunderstorm
+        draw_cloud(cx, cy - 15)
+        draw.polygon([(cx + 5, cy + 15), (cx - 15, cy + 35), (cx, cy + 35), (cx - 10, cy + 60), (cx + 20, cy + 30), (cx + 5, cy + 30)], fill="#fbbf24")
+    else:
+        draw_sun(cx, cy, radius=50)
 
 
 def _draw_metric(
