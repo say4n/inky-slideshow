@@ -28,6 +28,7 @@ WEB_UNIT="${SERVICE_NAME}-web.service"
 DISPLAY_UNIT="${SERVICE_NAME}-display.service"
 WEB_UNIT_PATH="/etc/systemd/system/${WEB_UNIT}"
 DISPLAY_UNIT_PATH="/etc/systemd/system/${DISPLAY_UNIT}"
+REBOOT_REQUIRED=0
 
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "This installer only supports Linux systemd hosts." >&2
@@ -116,6 +117,29 @@ PY
 
 install_os_packages
 
+configure_hardware_access() {
+  for group in spi gpio i2c; do
+    if getent group "${group}" >/dev/null 2>&1; then
+      "${SUDO[@]}" usermod -a -G "${group}" "${SERVICE_USER}"
+    fi
+  done
+
+  if command -v raspi-config >/dev/null 2>&1; then
+    if [[ ! -e /dev/spidev0.0 ]]; then
+      "${SUDO[@]}" raspi-config nonint do_spi 0 || true
+      REBOOT_REQUIRED=1
+    fi
+    "${SUDO[@]}" raspi-config nonint do_i2c 0 || true
+  fi
+
+  if [[ ! -e /dev/spidev0.0 ]]; then
+    echo "Warning: /dev/spidev0.0 is not present. SPI may need a reboot before the display service can start." >&2
+    REBOOT_REQUIRED=1
+  fi
+}
+
+configure_hardware_access
+
 run_as_service_user mkdir -p "${INSTALL_DIR}" "${PHOTO_DIR}" "$(dirname "${CONFIG_PATH}")"
 
 if [[ -d "${INSTALL_DIR}/.git" ]]; then
@@ -202,3 +226,13 @@ Useful commands:
   sudo journalctl -u ${WEB_UNIT} -f
   sudo journalctl -u ${DISPLAY_UNIT} -f
 EOF
+
+if [[ "${REBOOT_REQUIRED}" == "1" ]]; then
+  cat <<EOF
+
+SPI was enabled or is still not visible. Reboot the frame if the display service
+continues to report that /dev/spidev0.0 is missing:
+
+  sudo reboot
+EOF
+fi

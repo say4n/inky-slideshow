@@ -612,10 +612,15 @@ def run_display_loop(photo_dir: Path, config_store: ConfigStore) -> None:
             logger.info("Displaying photo: {}", current_image)
             try:
                 image = fit_photo(current_image, inky_display.resolution)
-                inky_display.set_image(image)
-                inky_display.show()
             except (OSError, UnidentifiedImageError):
                 logger.exception("Skipping unreadable photo: {}", current_image)
+            else:
+                inky_display.set_image(image)
+                try:
+                    inky_display.show()
+                except Exception:
+                    logger.exception("Display refresh failed while showing photo: {}", current_image)
+                    raise
             index += 1
             time.sleep(config.photo_seconds)
         else:
@@ -626,7 +631,11 @@ def run_display_loop(photo_dir: Path, config_store: ConfigStore) -> None:
         snapshot = weather_client.fetch_or_cached(config)
         weather_image = render_weather_screen(inky_display.resolution, config, snapshot)
         inky_display.set_image(weather_image)
-        inky_display.show()
+        try:
+            inky_display.show()
+        except Exception:
+            logger.exception("Display refresh failed while showing weather screen")
+            raise
         time.sleep(config.weather_seconds)
 
 
