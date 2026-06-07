@@ -1,4 +1,5 @@
-import io
+import sys
+import types
 from datetime import datetime, timezone
 
 import pytest
@@ -9,7 +10,6 @@ from inky_slideshow.slideshow import (
     AppConfig,
     ConfigStore,
     WeatherSnapshot,
-    create_app,
     fit_photo,
     image_for_display,
     list_photos,
@@ -138,53 +138,14 @@ def test_parse_weather_uses_current_daily_hourly_and_air_quality():
     assert snapshot.hourly[0]["weather_code"] == 2
 
 
-def test_flask_routes_update_upload_and_delete(monkeypatch, tmp_path):
-    monkeypatch.setattr(slideshow.WeatherClient, "fetch_or_cached", lambda self, config: None)
-    photo_dir = tmp_path / "photos"
-    store = ConfigStore(tmp_path / "config.json", AppConfig())
-    app = create_app(photo_dir, store)
-    client = app.test_client()
+def test_rotate_photo_updates_image_dimensions(tmp_path):
+    photo_path = tmp_path / "test.jpg"
+    Image.new("RGB", (12, 8), "white").save(photo_path)
 
-    response = client.post(
-        "/settings",
-        data={
-            "photo_seconds": "5",
-            "weather_seconds": "3",
-            "frame_orientation": "vertical",
-            "location_name": "Paris",
-            "latitude": "48.8566",
-            "longitude": "2.3522",
-        },
-    )
-    assert response.status_code == 302
-    assert store.load().photo_seconds == 5
-    assert store.load().frame_orientation == "vertical"
-    assert store.load().location_name == "Paris"
+    slideshow.rotate_photo(photo_path, -90)
 
-    image = Image.new("RGB", (12, 8), "white")
-    image_bytes = io.BytesIO()
-    image.save(image_bytes, format="JPEG")
-    image_bytes.seek(0)
-
-    response = client.post("/photos", data={"photo": (image_bytes, "test.jpg")}, content_type="multipart/form-data")
-    assert response.status_code == 302
-    assert (photo_dir / "test.jpg").exists()
-
-    response = client.get("/photos/test.jpg")
-    assert response.status_code == 200
-
-    response = client.get("/weather-screen")
-    assert response.status_code == 200
-    assert b"Inky" not in response.data
-
-    response = client.post("/photos/test.jpg/rotate", data={"direction": "right"})
-    assert response.status_code == 302
-    with Image.open(photo_dir / "test.jpg") as rotated:
+    with Image.open(photo_path) as rotated:
         assert rotated.size == (8, 12)
-
-    response = client.post("/photos/test.jpg/delete")
-    assert response.status_code == 302
-    assert not (photo_dir / "test.jpg").exists()
 
 
 def test_display_worker_retries_after_failure(monkeypatch, tmp_path):
@@ -207,3 +168,55 @@ def test_display_worker_retries_after_failure(monkeypatch, tmp_path):
         slideshow.run_display_worker(tmp_path, ConfigStore(tmp_path / "config.json", AppConfig()))
 
     assert calls == {"display": 2, "sleep": 1}
+
+
+def test_display_loop_shows_weather_after_each_photo(monkeypatch, tmp_path):
+    events = []
+
+    class FakeDisplay:
+        WHITE = 0
+        resolution = (800, 480)
+
+        def set_border(self, color):
+            self.border = color
+
+        def set_image(self, image):
+            self.current_image = image
+
+        def show(self):
+            events.append(self.current_image)
+
+    fake_display = FakeDisplay()
+    fake_auto = types.ModuleType("inky.auto")
+    fake_auto.auto = lambda ask_user=True: fake_display
+    monkeypatch.setitem(sys.modules, "inky", types.ModuleType("inky"))
+    monkeypatch.setitem(sys.modules, "inky.auto", fake_auto)
+
+    photo = tmp_path / "photo.jpg"
+    photo.write_bytes(b"not used")
+    photo_image = Image.new("RGB", (800, 480), "black")
+    weather_image = Image.new("RGB", (800, 480), "white")
+    store = ConfigStore(tmp_path / "config.json", AppConfig(photo_seconds=7, weather_seconds=3))
+
+    monkeypatch.setattr(slideshow, "list_photos", lambda photo_dir: [photo])
+    monkeypatch.setattr(slideshow, "fit_photo", lambda path, resolution: photo_image)
+    monkeypatch.setattr(slideshow, "render_weather_screen", lambda resolution, config, snapshot: weather_image)
+    monkeypatch.setattr(slideshow.WeatherClient, "fetch_or_cached", lambda self, config: None)
+    monkeypatch.setattr(slideshow.random, "randint", lambda start, stop: 0)
+
+    sleeps = []
+
+    def fake_sleep(seconds):
+        sleeps.append(seconds)
+        if len(sleeps) == 2:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(slideshow.time, "sleep", fake_sleep)
+
+    with pytest.raises(KeyboardInterrupt):
+        slideshow.run_display_loop(tmp_path, store)
+
+    assert len(events) == 2
+    assert events[0] is photo_image
+    assert events[1] is weather_image
+    assert sleeps == [7, 3]

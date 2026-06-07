@@ -18,8 +18,9 @@ pip install git+ssh://git@github.com/say4n/inky-slideshow
 ```
 
 On the frame, the intended setup path is the installer script. It clones or
-updates the repo, creates a local virtualenv, installs the package, writes the
-systemd units, enables them, and starts the services.
+updates the repo, installs Node dependencies for the admin app, creates a local
+Python virtualenv for the display service, writes the systemd units, enables
+them, and starts the services.
 
 ```console
 curl -fsSL https://raw.githubusercontent.com/say4n/inky-slideshow/main/scripts/install.sh | bash
@@ -45,17 +46,18 @@ Supported installer variables include `INKY_INSTALL_DIR`, `INKY_PHOTO_DIR`,
 
 ## Usage
 
-The slideshow runs as two systemd services: one for the display loop and one for
-the LAN admin page. This keeps settings and photo management available even if
-the display hardware path fails or restarts.
+The slideshow runs as two systemd services: a Python display loop for the Inky
+hardware and a Node.js LAN admin app. This keeps settings and photo management
+available even if the display hardware path fails or restarts.
 
 ```console
 hatch run slideshow /home/sayan/images
 ```
 
-The admin UI listens on `http://<frame-host>:8080` by default. Use it to upload
-or delete photos, change the photo/weather durations, and adjust the weather
-location. Supported photo formats are JPEG, PNG, HEIC, and HEIF.
+The admin UI listens on `http://<frame-host>:8080` by default. Use it to upload,
+rotate, or delete photos, change the photo/weather durations, adjust the weather
+location, and preview the weather screen. Supported photo formats are JPEG, PNG,
+HEIC, and HEIF.
 
 Default timings are 60 seconds for each photo and 30 seconds for the weather
 screen:

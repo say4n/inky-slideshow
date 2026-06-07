@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import io
 import json
 import random
 import threading
@@ -13,10 +12,8 @@ from urllib.parse import urlencode
 from urllib.request import urlopen
 
 import click
-from flask import Flask, Response, abort, redirect, render_template_string, request, send_from_directory, url_for
 from loguru import logger
 from PIL import Image, ImageDraw, ImageFont, ImageOps, UnidentifiedImageError
-from werkzeug.utils import secure_filename
 
 try:
     from zoneinfo import ZoneInfo
@@ -33,12 +30,19 @@ if register_heif_opener is not None:
 
 ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".heic", ".heif"}
 DEFAULT_CONFIG_PATH = Path("~/.config/inky-slideshow/config.json").expanduser()
+FONT_DIR = Path(__file__).parent / "assets" / "fonts"
 DEFAULT_LOCATION_NAME = "London"
 DEFAULT_LATITUDE = 51.5072
 DEFAULT_LONGITUDE = -0.1276
 LONDON_TZ = "Europe/London"
 KOLKATA_TZ = "Asia/Kolkata"
 VALID_ORIENTATIONS = {"horizontal", "vertical"}
+INKY_BLACK = "#111111"
+INKY_BLUE = "#2563eb"
+INKY_YELLOW = "#facc15"
+INKY_RED = "#dc2626"
+INKY_GREEN = "#16a34a"
+INKY_ORANGE = "#ea580c"
 
 
 @dataclass
@@ -268,8 +272,8 @@ def list_photos(photo_dir: Path) -> list[Path]:
 
 
 def managed_photo_path(photo_dir: Path, filename: str) -> Path:
-    safe_name = secure_filename(filename)
-    if not safe_name or Path(safe_name).name != filename:
+    safe_name = _safe_photo_filename(filename)
+    if safe_name is None:
         raise ValueError("Invalid filename")
     target = (photo_dir / safe_name).resolve()
     root = photo_dir.resolve()
@@ -278,6 +282,13 @@ def managed_photo_path(photo_dir: Path, filename: str) -> Path:
     if target.suffix.lower() not in ALLOWED_EXTENSIONS:
         raise ValueError("Unsupported file type")
     return target
+
+
+def _safe_photo_filename(filename: str) -> str | None:
+    if not filename or Path(filename).name != filename:
+        return None
+    cleaned = "".join(char if char.isalnum() or char in "._-" else "_" for char in filename)
+    return cleaned if cleaned == filename else None
 
 
 def fit_photo(path: Path, resolution: tuple[int, int]) -> Image.Image:
@@ -321,103 +332,139 @@ def render_weather_screen_pillow(
     snapshot: WeatherSnapshot | None,
     now: datetime | None = None,
 ) -> Image.Image:
-    from PIL import ImageFilter
     now = now or datetime.now(ZoneInfo(LONDON_TZ))
-    image = Image.new("RGB", resolution, "black")
+    image = Image.new("RGB", resolution, "white")
     draw = ImageDraw.Draw(image)
     width, height = resolution
-
     is_vertical = height > width
-    rx = int(width * 0.45) if not is_vertical else width
-    ry = height if not is_vertical else int(height * 0.45)
-
-    if not is_vertical:
-        draw.rectangle((rx, 0, width, height), fill="white")
-    else:
-        draw.rectangle((0, ry, width, height), fill="white")
-
+    margin = 34 if not is_vertical else 28
     london_now = now.astimezone(ZoneInfo(LONDON_TZ))
     kolkata_now = now.astimezone(ZoneInfo(KOLKATA_TZ))
 
-    date_font = _font(32, "Black")
-    loc_font = _font(24, "Regular")
-    time_size = 110 if not is_vertical else 90
-    time_font = _font(time_size, "Bold")
-    cities_font = _font(16, "Medium")
+    date_font = _font(32 if not is_vertical else 26, "Bold")
+    small_font = _font(22 if not is_vertical else 18, "Medium")
+    label_font = _font(15 if not is_vertical else 14, "Bold")
+    location_font = _font(26 if not is_vertical else 22, "Bold")
+    temp_font = _font(118 if not is_vertical else 96, "Black")
+    feels_font = _font(20 if not is_vertical else 18, "Medium")
+    value_font = _font(30 if not is_vertical else 24, "Bold")
+    unit_font = _font(68 if not is_vertical else 54, "Black")
 
-    draw.text((40, 48), now.strftime("%A, %-d %b").upper(), font=date_font, fill="white", anchor="lt")
-    draw.text((40, 88), config.location_name, font=loc_font, fill="white", anchor="lt")
+    draw.text((margin, margin), london_now.strftime("%A, %-d %B"), font=date_font, fill=INKY_BLACK, anchor="lt")
+    draw.rounded_rectangle((margin, margin + 40, margin + (232 if not is_vertical else 184), margin + 46), radius=3, fill=INKY_YELLOW)
+    if not is_vertical:
+        chip_right = width - margin
+        chip_right = _draw_time_chip(draw, chip_right, margin + 2, f"KOLKATA {kolkata_now.strftime('%H:%M')}", small_font, INKY_GREEN)
+        _draw_time_chip(draw, chip_right, margin + 2, f"LONDON {london_now.strftime('%H:%M')}", small_font, INKY_BLUE)
+    else:
+        draw.text((width - margin, margin + 3), f"LONDON {london_now.strftime('%H:%M')}", font=small_font, fill=INKY_BLUE, anchor="rt")
+        draw.text((width - margin, margin + 28), f"KOLKATA {kolkata_now.strftime('%H:%M')}", font=small_font, fill=INKY_GREEN, anchor="rt")
+
+    weather_code = snapshot.weather_code if snapshot else None
+    weather_label = _weather_label(weather_code)
+    temp_text = _format_temp(snapshot.temperature_c if snapshot else None)
+    feels_text = f"Feels like {_format_temp(snapshot.feels_like_c if snapshot else None)}"
 
     if not is_vertical:
-        time_y = 120
-        icon_x = rx // 2
-        icon_y = height - 130
-        icon_size = 160
+        top = 86
+        icon_cx = 172
+        icon_cy = 212
+        _draw_weather_icon(draw, icon_cx, icon_cy, weather_code, 154)
+        draw.text((icon_cx, 336), weather_label.upper(), font=label_font, fill=INKY_BLUE, anchor="mt")
+
+        main_x = 340
+        draw.text((main_x, top + 14), config.location_name, font=location_font, fill=INKY_BLACK, anchor="lt")
+        _draw_temperature(draw, (main_x, top + 152), temp_text, temp_font, unit_font)
+        draw.text((main_x + 6, top + 190), feels_text, font=feels_font, fill=INKY_BLACK, anchor="lt")
+        draw.line((main_x, top + 232, width - margin, top + 232), fill=INKY_BLACK, width=3)
+
+        metrics_y = top + 252
+        metrics = [
+            ("SUNRISE", _time_label(snapshot.sunrise) if snapshot else "--:--"),
+            ("SUNSET", _time_label(snapshot.sunset) if snapshot else "--:--"),
+            ("WIND", f"{_format_number(snapshot.wind_mph if snapshot else None)} mph"),
+            ("UV", _uv_label(snapshot.uv_index if snapshot else None)),
+        ]
+        col_w = (width - main_x - margin - 14) // 2
+        for i, (m_label, m_val) in enumerate(metrics):
+            col = i % 2
+            row = i // 2
+            x = main_x + col * (col_w + 14)
+            y = metrics_y + row * 62
+            _draw_compact_metric(draw, (x, y), m_label, m_val, col_w, 54, label_font, value_font, _metric_color(m_label))
     else:
-        time_y = 130
-        icon_x = width - 80
-        icon_y = ry // 2 + 10
-        icon_size = 120
+        top = 58
+        icon_cx = width // 2
+        _draw_weather_icon(draw, icon_cx, top + 104, weather_code, 132)
+        draw.text((icon_cx, top + 200), weather_label.upper(), font=label_font, fill=INKY_BLUE, anchor="mt")
+        draw.text((margin, top + 260), config.location_name, font=location_font, fill=INKY_BLACK, anchor="lt")
+        _draw_temperature(draw, (margin, top + 390), temp_text, temp_font, unit_font)
+        draw.text((margin + 4, top + 424), feels_text, font=feels_font, fill=INKY_BLACK, anchor="lt")
+        draw.line((margin, top + 476, width - margin, top + 476), fill=INKY_BLACK, width=3)
 
-    draw.text((40, time_y), london_now.strftime("%H:%M"), font=time_font, fill="white", anchor="lt")
-
-    weather_code = snapshot.weather_code if snapshot else 0
-    _draw_weather_icon(draw, icon_x, icon_y, weather_code, icon_size)
-
-    bottom_y = height - 48 if not is_vertical else ry - 48
-    draw.text((40, bottom_y), f"KOLKATA {kolkata_now.strftime('%H:%M')}", font=cities_font, fill="white", anchor="ls")
-
-    temp_font = _font(140, "Black")
-    feels_font = _font(24, "Medium")
-    label_font = _font(14, "Bold")
-    val_font = _font(36, "Black")
-
-    temp_text = _format_temp(snapshot.temperature_c if snapshot else None)
-    feels_text = f"FL {_format_temp(snapshot.feels_like_c if snapshot else None)}"
-
-    right_x = rx if not is_vertical else 0
-    right_y = 0 if not is_vertical else ry
-    right_w = width - right_x
-
-    temp_baseline = right_y + 160
-    draw.text((right_x + 40, temp_baseline), temp_text, font=temp_font, fill="black", anchor="ls")
-    draw.text((right_x + right_w - 40, temp_baseline), feels_text, font=feels_font, fill="black", anchor="rs")
-
-    divider_y = temp_baseline + 24
-    draw.rectangle((right_x + 40, divider_y, right_x + right_w - 40, divider_y + 4), fill="black")
-
-    metrics = [
-        ("SUNRISE", _time_label(snapshot.sunrise) if snapshot else "--:--"),
-        ("SUNSET", _time_label(snapshot.sunset) if snapshot else "--:--"),
-        ("WIND", f"{_format_number(snapshot.wind_mph if snapshot else None)} mph"),
-        ("UV INDEX", _uv_label(snapshot.uv_index if snapshot else None)),
-        ("AIR QUALITY", _aqi_label(snapshot.air_quality_index if snapshot else None)),
-    ]
-
-    my_y = divider_y + 40
-    col_w = (right_w - 80 - 24) // 2
-    for i, (m_label, m_val) in enumerate(metrics):
-        col = i % 2
-        row = i // 2
-        x = right_x + 40 + col * (col_w + 24)
-        y = my_y + row * 80
-        # Thin crisp line instead of a yellow block
-        draw.rectangle((x, y, x + 2, y + 45), fill="#fbbf24")
-        draw.text((x + 16, y + 16), m_label, font=label_font, fill="black", anchor="ls")
-        draw.text((x + 16, y + 46), m_val, font=val_font, fill="black", anchor="ls")
+        metrics = [
+            ("SUNRISE", _time_label(snapshot.sunrise) if snapshot else "--:--"),
+            ("SUNSET", _time_label(snapshot.sunset) if snapshot else "--:--"),
+            ("WIND", f"{_format_number(snapshot.wind_mph if snapshot else None)} mph"),
+            ("UV", _uv_label(snapshot.uv_index if snapshot else None)),
+        ]
+        metric_w = width - (margin * 2)
+        for i, (m_label, m_val) in enumerate(metrics):
+            _draw_compact_metric(draw, (margin, top + 504 + i * 62), m_label, m_val, metric_w, 50, label_font, value_font, _metric_color(m_label))
 
     if snapshot is None:
-        draw.text((right_x + right_w // 2, height - 48), "weather unavailable", font=_font(14, "Bold"), fill="black", anchor="ms")
+        draw.text((width - margin, height - margin), "WEATHER UNAVAILABLE", font=small_font, fill=INKY_RED, anchor="rb")
 
     return image
 
 def _font(size: int, weight: str = "Regular") -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    font_path = Path(__file__).parent / "assets" / "fonts" / f"Inter-{weight}.ttf"
+    font_path = FONT_DIR / f"Inter-{weight}.ttf"
     if font_path.exists():
         return ImageFont.truetype(str(font_path), size)
     return ImageFont.load_default()
 
-def _draw_weather_icon(draw: ImageDraw.ImageDraw, cx: int, cy: int, code: int | None, icon_size: int = 160) -> None:
+
+def _draw_time_chip(
+    draw: ImageDraw.ImageDraw,
+    right: int,
+    y: int,
+    text: str,
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    accent: str,
+) -> int:
+    bbox = draw.textbbox((0, 0), text, font=font)
+    width = bbox[2] - bbox[0] + 32
+    height = 34
+    left = right - width
+    draw.rounded_rectangle((left, y, right, y + height), radius=8, outline=accent, width=2)
+    draw.rounded_rectangle((left + 8, y + 9, left + 15, y + height - 9), radius=3, fill=accent)
+    draw.text((right - 12, y + height // 2), text, font=font, fill=INKY_BLACK, anchor="rm")
+    return left - 12
+
+
+def _draw_temperature(
+    draw: ImageDraw.ImageDraw,
+    origin: tuple[int, int],
+    text: str,
+    number_font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    unit_font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+) -> None:
+    x, baseline = origin
+    if text.endswith("C") and text != "--":
+        number = text[:-1]
+        draw.text((x, baseline), number, font=number_font, fill=INKY_BLACK, anchor="ls")
+        bbox = draw.textbbox((x, baseline), number, font=number_font, anchor="ls")
+        draw.text((bbox[2] + 8, baseline - 9), "C", font=unit_font, fill=INKY_RED, anchor="ls")
+        return
+    draw.text((x, baseline), text, font=number_font, fill=INKY_BLACK, anchor="ls")
+
+def _draw_weather_icon(
+    draw: ImageDraw.ImageDraw,
+    cx: int,
+    cy: int,
+    code: int | None,
+    icon_size: int = 160,
+) -> None:
     if code is None:
         code = 0
     if code == 0:
@@ -441,29 +488,78 @@ def _draw_weather_icon(draw: ImageDraw.ImageDraw, cx: int, cy: int, code: int | 
     else:
         char = "\uf00d"
 
-    font_path = Path(__file__).parent / "assets" / "fonts" / "weathericons.ttf"
+    font_path = FONT_DIR / "weathericons.ttf"
     if font_path.exists():
         icon_font = ImageFont.truetype(str(font_path), icon_size)
-        draw.text((cx, cy), char, font=icon_font, fill="#fbbf24", anchor="mm")
+        draw.text((cx + 4, cy + 4), char, font=icon_font, fill=INKY_BLACK, anchor="mm")
+        draw.text((cx, cy), char, font=icon_font, fill=_weather_icon_color(code), anchor="mm")
     else:
-        # Fallback
-        draw.ellipse((cx - 40, cy - 40, cx + 40, cy + 40), fill="#fbbf24")
+        draw.ellipse((cx - 40, cy - 40, cx + 40, cy + 40), outline=_weather_icon_color(code), width=8)
 
 
-def _draw_metric(
+def _draw_compact_metric(
     draw: ImageDraw.ImageDraw,
     origin: tuple[int, int],
     label: str,
     value: str,
-    value_font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
-    label_font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
     width: int,
     height: int,
+    label_font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    value_font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    accent: str,
 ) -> None:
     x, y = origin
-    draw.text((x, y + height // 2), label, font=label_font, fill="black", anchor="lm")
-    draw.text((x + width, y + height // 2), value, font=value_font, fill="black", anchor="rm")
-    draw.line((x, y + height, x + width, y + height), fill="black", width=max(1, height // 18))
+    draw.rounded_rectangle((x, y, x + width, y + height), radius=8, outline=INKY_BLACK, width=2)
+    draw.rounded_rectangle((x + 5, y + 6, x + 14, y + height - 6), radius=4, fill=accent)
+    if height <= 54:
+        draw.text((x + 26, y + height // 2), label, font=label_font, fill=INKY_BLACK, anchor="lm")
+        draw.text((x + width - 14, y + height // 2), value, font=value_font, fill=INKY_BLACK, anchor="rm")
+        return
+    draw.text((x + 28, y + 20), label, font=label_font, fill=INKY_BLACK, anchor="ls")
+    draw.text((x + 28, y + height - 13), value, font=value_font, fill=INKY_BLACK, anchor="ls")
+
+
+def _weather_icon_color(code: int | None) -> str:
+    if code is None:
+        return INKY_BLUE
+    if code == 0 or code in (1, 2):
+        return INKY_YELLOW
+    if code >= 95:
+        return INKY_RED
+    if code in range(51, 68) or code in range(80, 83):
+        return INKY_BLUE
+    if code in range(71, 78) or code in range(85, 87):
+        return INKY_BLUE
+    return INKY_BLUE
+
+
+def _metric_color(label: str) -> str:
+    return {
+        "SUNRISE": INKY_YELLOW,
+        "SUNSET": INKY_RED,
+        "WIND": INKY_BLUE,
+        "UV": INKY_GREEN,
+    }.get(label, INKY_BLACK)
+
+
+def _weather_label(code: int | None) -> str:
+    if code is None:
+        return "Weather"
+    if code == 0:
+        return "Clear"
+    if code in (1, 2):
+        return "Partly cloudy"
+    if code == 3:
+        return "Overcast"
+    if code in (45, 48):
+        return "Fog"
+    if code in range(51, 68) or code in range(80, 83):
+        return "Rain"
+    if code in range(71, 78) or code in range(85, 87):
+        return "Snow"
+    if code >= 95:
+        return "Storm"
+    return "Weather"
 
 
 def _format_temp(value: float | None) -> str:
@@ -497,129 +593,9 @@ def _aqi_label(value: int | None) -> str:
     return f"{value} {level}"
 
 
-def _hour_label(value: str | None) -> str:
-    parsed = _parse_open_meteo_time(value) if value else None
-    return "--" if parsed is None else parsed.strftime("%H")
-
-
 def _time_label(value: str | None) -> str:
     parsed = _parse_open_meteo_time(value) if value else None
     return "--:--" if parsed is None else parsed.strftime("%H:%M")
-
-
-def create_app(photo_dir: Path, config_store: ConfigStore) -> Flask:
-    app = Flask(__name__)
-    photo_dir.mkdir(parents=True, exist_ok=True)
-    weather_client = WeatherClient()
-
-    @app.route("/", methods=["GET"])
-    def index() -> str:
-        config = config_store.load()
-        photos = [path.name for path in list_photos(photo_dir)]
-        return render_template_string(ADMIN_TEMPLATE, config=config, photos=photos)
-
-    @app.route("/weather-screen", methods=["GET"])
-    def weather_screen() -> Response:
-        config = config_store.load()
-        snapshot = weather_client.fetch_or_cached(config)
-        resolution = oriented_resolution((800, 480), config.frame_orientation)
-        image = render_weather_screen(resolution, config, snapshot)
-        buf = io.BytesIO()
-        image.save(buf, format="PNG")
-        return Response(buf.getvalue(), mimetype="image/png")
-
-    @app.route("/settings", methods=["POST"])
-    def settings() -> Response:
-        current = config_store.load()
-        updated = AppConfig(
-            photo_seconds=_positive_int(request.form.get("photo_seconds"), current.photo_seconds),
-            weather_seconds=_positive_int(request.form.get("weather_seconds"), current.weather_seconds),
-            host=current.host,
-            port=current.port,
-            location_name=(request.form.get("location_name") or current.location_name).strip() or current.location_name,
-            latitude=_float_value(request.form.get("latitude"), current.latitude),
-            longitude=_float_value(request.form.get("longitude"), current.longitude),
-            frame_orientation=normalize_orientation(request.form.get("frame_orientation") or current.frame_orientation),
-        )
-        config_store.save(updated)
-        return redirect(url_for("index"))
-
-    @app.route("/photos", methods=["POST"])
-    def upload_photo() -> Response:
-        upload = request.files.get("photo")
-        if upload is None or not upload.filename:
-            abort(400, "No photo uploaded")
-        try:
-            target = managed_photo_path(photo_dir, secure_filename(upload.filename))
-        except ValueError as error:
-            abort(400, str(error))
-        upload.save(target)
-        try:
-            validate_image(target)
-        except (OSError, UnidentifiedImageError):
-            target.unlink(missing_ok=True)
-            abort(400, "Uploaded file is not a readable image")
-        return redirect(url_for("index"))
-
-    @app.route("/photos/<path:filename>", methods=["GET"])
-    def photo(filename: str) -> Response:
-        try:
-            target = managed_photo_path(photo_dir, filename)
-        except ValueError:
-            abort(404)
-        if not target.exists():
-            abort(404)
-        return send_from_directory(photo_dir, target.name)
-
-    @app.route("/photos/<path:filename>/delete", methods=["POST"])
-    def delete_photo(filename: str) -> Response:
-        try:
-            target = managed_photo_path(photo_dir, filename)
-        except ValueError:
-            abort(404)
-        if target.exists():
-            target.unlink()
-        return redirect(url_for("index"))
-
-    @app.route("/photos/<path:filename>/rotate", methods=["POST"])
-    def rotate_photo_route(filename: str) -> Response:
-        try:
-            target = managed_photo_path(photo_dir, filename)
-        except ValueError:
-            abort(404)
-        if not target.exists():
-            abort(404)
-        direction = request.form.get("direction", "right")
-        degrees = 90 if direction == "left" else -90
-        try:
-            rotate_photo(target, degrees)
-        except (OSError, UnidentifiedImageError):
-            abort(400, "Photo could not be rotated")
-        return redirect(url_for("index"))
-
-    return app
-
-
-def _positive_int(value: str | None, fallback: int) -> int:
-    try:
-        parsed = int(value or "")
-    except ValueError:
-        return fallback
-    return parsed if parsed > 0 else fallback
-
-
-def _float_value(value: str | None, fallback: float) -> float:
-    try:
-        return float(value or "")
-    except ValueError:
-        return fallback
-
-
-def run_web_server(photo_dir: Path, config_store: ConfigStore) -> None:
-    config = config_store.load()
-    app = create_app(photo_dir, config_store)
-    logger.info("Admin UI listening on http://{}:{}", config.host, config.port)
-    app.run(host=config.host, port=config.port, threaded=True, use_reloader=False)
 
 
 def start_display_worker(photo_dir: Path, config_store: ConfigStore) -> threading.Thread:
@@ -686,198 +662,6 @@ def run_display_loop(photo_dir: Path, config_store: ConfigStore) -> None:
         time.sleep(config.weather_seconds)
 
 
-ADMIN_TEMPLATE = """
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Inky Slideshow Console</title>
-    <style>
-      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-      
-      :root {
-        --bg: #f8f9fa;
-        --surface: #ffffff;
-        --border: #eaedf0;
-        --text-main: #111827;
-        --text-muted: #6b7280;
-        --accent: #000000;
-        --accent-hover: #374151;
-        --radius: 12px;
-        --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-      }
-      
-      * { box-sizing: border-box; }
-      body { 
-        margin: 0; 
-        background: var(--bg); 
-        color: var(--text-main);
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-        -webkit-font-smoothing: antialiased;
-      }
-      main { max-width: 1000px; margin: 0 auto; padding: 48px 24px; }
-      
-      header { 
-        display: flex; align-items: flex-end; justify-content: space-between; 
-        margin-bottom: 40px; border-bottom: 1px solid var(--border);
-        padding-bottom: 24px;
-      }
-      header h1 { font-size: 32px; font-weight: 800; letter-spacing: -0.02em; margin: 0; line-height: 1; }
-      header p.muted { margin: 8px 0 0; font-size: 15px; color: var(--text-muted); }
-      .weather-link { 
-        color: var(--text-main); font-weight: 600; text-decoration: none; font-size: 14px;
-        display: inline-flex; align-items: center; gap: 8px; transition: var(--transition);
-        padding: 8px 16px; border-radius: 20px; background: var(--border);
-      }
-      .weather-link:hover { background: #e5e7eb; }
-      
-      .panel { 
-        background: var(--surface); border-radius: var(--radius); 
-        padding: 32px; box-shadow: 0 4px 24px -12px rgba(0,0,0,0.05);
-        margin-bottom: 24px; border: 1px solid var(--border);
-      }
-      .panel h2 { font-size: 18px; font-weight: 700; margin: 0 0 24px; letter-spacing: -0.01em; }
-      
-      /* Form elements */
-      .settings { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 20px; }
-      label, .field { display: flex; flex-direction: column; gap: 8px; font-size: 14px; font-weight: 600; color: var(--text-muted); }
-      
-      input[type="text"], input[type="number"], input[type="file"] {
-        width: 100%; font: inherit; padding: 12px 14px; color: var(--text-main);
-        border: 1px solid #d1d5db; border-radius: 8px; background: var(--surface); 
-        transition: var(--transition);
-      }
-      input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,0,0,0.05); }
-      
-      button { 
-        font: inherit; font-size: 14px; font-weight: 600; 
-        border: 1px solid var(--accent); background: var(--accent); color: white; 
-        padding: 12px 20px; border-radius: 8px; cursor: pointer; 
-        transition: var(--transition);
-      }
-      button:hover { background: var(--accent-hover); border-color: var(--accent-hover); transform: translateY(-1px); }
-      button:active { transform: translateY(0); }
-      
-      button.secondary { 
-        background: var(--surface); color: var(--text-main); border-color: #d1d5db; 
-        padding: 8px; width: 100%; font-size: 13px;
-      }
-      button.secondary:hover { background: #f9fafb; border-color: #9ca3af; color: var(--text-main); }
-      
-      .orientation { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-      .orientation input { position: absolute; opacity: 0; pointer-events: none; }
-      .orientation span { 
-        display: flex; align-items: center; justify-content: center;
-        border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; 
-        color: var(--text-muted); cursor: pointer; transition: var(--transition);
-      }
-      .orientation input:checked + span { background: var(--accent); color: white; border-color: var(--accent); }
-      
-      .upload { display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: center; }
-      .upload input[type="file"] { padding: 9px 12px; }
-      
-      /* Photos Grid */
-      .photos-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 20px; }
-      .photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
-      .photo { 
-        background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); 
-        padding: 12px; transition: var(--transition);
-      }
-      .photo:hover { box-shadow: 0 10px 30px -10px rgba(0,0,0,0.1); transform: translateY(-2px); }
-      .photo img { 
-        display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: contain; 
-        background: #f3f4f6; border-radius: 6px; margin-bottom: 12px; 
-      }
-      .photos.vertical .photo img { aspect-ratio: 10 / 16; }
-      .actions { display: grid; grid-template-columns: 1fr 1fr 1.5fr; gap: 8px; }
-      .photo form { display: block; }
-      
-      @media (max-width: 768px) {
-        .settings { grid-template-columns: 1fr 1fr; }
-        .upload { grid-template-columns: 1fr; }
-        .upload button { width: 100%; }
-        header { flex-direction: column; align-items: flex-start; gap: 16px; }
-      }
-    </style>
-  </head>
-  <body>
-    <main>
-      <header>
-        <div>
-          <h1>Inky Console</h1>
-          <p class="muted">Manage your photo gallery and weather display settings</p>
-        </div>
-        <a class="weather-link" href="/weather-screen" target="_blank">
-          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-          Preview Display
-        </a>
-      </header>
-      
-      <section class="panel">
-        <h2>Display Configuration</h2>
-        <form class="settings" action="/settings" method="post">
-          <label>Photo Duration (s) <input name="photo_seconds" type="number" min="1" value="{{ config.photo_seconds }}"></label>
-          <label>Weather Duration (s) <input name="weather_seconds" type="number" min="1" value="{{ config.weather_seconds }}"></label>
-          <div class="field">Frame Orientation
-            <div class="orientation">
-              <label><input name="frame_orientation" type="radio" value="horizontal" {% if config.frame_orientation == "horizontal" %}checked{% endif %}><span>Landscape</span></label>
-              <label><input name="frame_orientation" type="radio" value="vertical" {% if config.frame_orientation == "vertical" %}checked{% endif %}><span>Portrait</span></label>
-            </div>
-          </div>
-          <label>City Name <input name="location_name" value="{{ config.location_name }}"></label>
-          <label>Latitude <input name="latitude" type="number" step="0.0001" value="{{ config.latitude }}"></label>
-          <label>Longitude <input name="longitude" type="number" step="0.0001" value="{{ config.longitude }}"></label>
-          <button type="submit" style="grid-column: 1 / -1; margin-top: 8px; width: 100%; max-width: 200px;">Save Settings</button>
-        </form>
-      </section>
-      
-      <section class="panel">
-        <h2>Upload New Photo</h2>
-        <form class="upload" action="/photos" method="post" enctype="multipart/form-data">
-          <input name="photo" type="file" accept=".png,.jpg,.jpeg,.heic,.heif,image/png,image/jpeg,image/heic,image/heif" required>
-          <button type="submit">Upload Photo</button>
-        </form>
-      </section>
-      
-      <section class="panel" style="background: transparent; border: none; box-shadow: none; padding: 0;">
-        <div class="photos-head">
-          <h2 style="margin:0;">Photo Gallery</h2>
-          <p class="muted" style="margin:0;">{{ photos|length }} images loaded</p>
-        </div>
-        {% if photos %}
-        <div class="photos {{ config.frame_orientation }}">
-          {% for photo in photos %}
-          <div class="photo">
-            <img src="{{ url_for('photo', filename=photo) }}" alt="{{ photo }}">
-            <div class="actions">
-              <form action="{{ url_for('rotate_photo_route', filename=photo) }}" method="post">
-                <input type="hidden" name="direction" value="left">
-                <button class="secondary" type="submit" title="Rotate left">↺</button>
-              </form>
-              <form action="{{ url_for('rotate_photo_route', filename=photo) }}" method="post">
-                <input type="hidden" name="direction" value="right">
-                <button class="secondary" type="submit" title="Rotate right">↻</button>
-              </form>
-              <form action="{{ url_for('delete_photo', filename=photo) }}" method="post">
-                <button class="secondary" type="submit" style="color: #ef4444; border-color: #fca5a5;">Trash</button>
-              </form>
-            </div>
-          </div>
-          {% endfor %}
-        </div>
-        {% else %}
-        <div class="panel" style="text-align: center; padding: 60px 20px;">
-          <p class="muted">Your gallery is empty. Upload a photo to get started.</p>
-        </div>
-        {% endif %}
-      </section>
-    </main>
-  </body>
-</html>
-"""
-
-
 @click.command()
 @click.argument("path", type=click.Path(file_okay=False))
 @click.option("--config", "config_path", type=click.Path(dir_okay=False), default=str(DEFAULT_CONFIG_PATH), show_default=True)
@@ -889,7 +673,7 @@ ADMIN_TEMPLATE = """
 @click.option("--latitude", default=DEFAULT_LATITUDE, show_default=True, type=float)
 @click.option("--longitude", default=DEFAULT_LONGITUDE, show_default=True, type=float)
 @click.option("--frame-orientation", type=click.Choice(["horizontal", "vertical"]), default="horizontal", show_default=True)
-@click.option("--mode", type=click.Choice(["all", "web", "display"]), default="all", show_default=True)
+@click.option("--mode", type=click.Choice(["display"]), default="display", show_default=True)
 def main(
     path: str,
     config_path: str,
@@ -917,13 +701,7 @@ def main(
     )
     config_store = ConfigStore(Path(config_path).expanduser(), defaults)
     config_store.load()
-    if mode == "web":
-        run_web_server(photo_dir, config_store)
-    elif mode == "display":
-        run_display_loop(photo_dir, config_store)
-    else:
-        start_display_worker(photo_dir, config_store)
-        run_web_server(photo_dir, config_store)
+    run_display_loop(photo_dir, config_store)
 
 
 if __name__ == "__main__":

@@ -24,12 +24,10 @@ classifiers = [
 ]
 dependencies = [
   "click",
-  "Flask>=2.0",
   "inky",
   "loguru",
   "Pillow",
   "pillow-heif",
-  "Werkzeug",
 ]
 
 [project.urls]
@@ -46,7 +44,6 @@ dependencies = [
   "inky",
   "click",
   "loguru",
-  "Flask>=2.0",
   "Pillow",
   "pillow-heif",
   "pytest",
@@ -60,7 +57,6 @@ installer = "uv"
 skip-install = true
 dependencies = [
   "click",
-  "Flask>=2.0",
   "loguru",
   "Pillow",
   "pillow-heif",

@@ -71,6 +71,8 @@ install_os_packages() {
   local missing=()
   local python_dev_package="python3-dev"
   command -v git >/dev/null 2>&1 || missing+=(git)
+  command -v node >/dev/null 2>&1 || missing+=(nodejs)
+  command -v npm >/dev/null 2>&1 || missing+=(npm)
   command -v python3 >/dev/null 2>&1 || missing+=(python3)
   python3 -m venv --help >/dev/null 2>&1 || missing+=(python3-venv)
 
@@ -87,6 +89,8 @@ PY
     local apt_packages=(
       build-essential
       git
+      nodejs
+      npm
       python3
       python3-dev
       python3-pip
@@ -112,7 +116,7 @@ PY
   fi
 
   echo "Missing required install prerequisites." >&2
-  echo "Install git, python3, python3-venv, python3-pip, python3-dev, and build-essential, then rerun this installer." >&2
+  echo "Install git, nodejs, npm, python3, python3-venv, python3-pip, python3-dev, and build-essential, then rerun this installer." >&2
   exit 1
 }
 
@@ -160,6 +164,7 @@ fi
 run_as_service_user python3 -m venv "${INSTALL_DIR}/.venv"
 run_as_service_user "${INSTALL_DIR}/.venv/bin/python" -m pip install --upgrade pip wheel
 run_as_service_user "${INSTALL_DIR}/.venv/bin/python" -m pip install --upgrade "${INSTALL_DIR}"
+run_as_service_user npm --prefix "${INSTALL_DIR}" ci --omit=dev
 
 
 TMP_WEB_UNIT="$(mktemp)"
@@ -175,7 +180,7 @@ Wants=network-online.target
 Type=simple
 User=${SERVICE_USER}
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=${INSTALL_DIR}/.venv/bin/python ${INSTALL_DIR}/src/inky_slideshow/slideshow.py "${PHOTO_DIR}" --mode web --config "${CONFIG_PATH}" --photo-seconds ${PHOTO_SECONDS} --weather-seconds ${WEATHER_SECONDS} --host ${WEB_HOST} --port ${WEB_PORT} --location-name "${LOCATION_NAME}" --latitude ${LATITUDE} --longitude ${LONGITUDE} --frame-orientation ${FRAME_ORIENTATION}
+ExecStart=/usr/bin/env node ${INSTALL_DIR}/admin/server.js --photo-dir "${PHOTO_DIR}" --config "${CONFIG_PATH}" --host ${WEB_HOST} --port ${WEB_PORT} --python ${INSTALL_DIR}/.venv/bin/python --photo-seconds ${PHOTO_SECONDS} --weather-seconds ${WEATHER_SECONDS} --location-name "${LOCATION_NAME}" --latitude ${LATITUDE} --longitude ${LONGITUDE} --frame-orientation ${FRAME_ORIENTATION}
 Restart=always
 RestartSec=10
 
