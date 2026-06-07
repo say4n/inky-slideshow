@@ -262,6 +262,7 @@ def managed_photo_path(photo_dir: Path, filename: str) -> Path:
 
 def fit_photo(path: Path, resolution: tuple[int, int]) -> Image.Image:
     with Image.open(path) as image:
+        image = ImageOps.exif_transpose(image)
         image = ImageOps.contain(image.convert("RGB"), resolution)
         canvas = Image.new("RGB", resolution, "white")
         canvas.paste(image, ((resolution[0] - image.width) // 2, (resolution[1] - image.height) // 2))

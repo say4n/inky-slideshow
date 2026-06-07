@@ -10,6 +10,7 @@ from inky_slideshow.slideshow import (
     ConfigStore,
     WeatherSnapshot,
     create_app,
+    fit_photo,
     list_photos,
     managed_photo_path,
     parse_weather,
@@ -52,6 +53,20 @@ def test_list_photos_filters_allowed_extensions(tmp_path):
     (tmp_path / "notes.txt").write_bytes(b"")
 
     assert [path.name for path in list_photos(tmp_path)] == ["a.png", "b.jpg", "c.heic", "d.heif"]
+
+
+def test_fit_photo_preserves_full_image_with_white_padding(tmp_path):
+    photo_path = tmp_path / "wide.png"
+    image = Image.new("RGB", (100, 50), "black")
+    image.save(photo_path)
+
+    fitted = fit_photo(photo_path, (100, 100))
+
+    assert fitted.size == (100, 100)
+    assert fitted.getpixel((50, 10)) == (255, 255, 255)
+    assert fitted.getpixel((50, 25)) == (0, 0, 0)
+    assert fitted.getpixel((50, 74)) == (0, 0, 0)
+    assert fitted.getpixel((50, 90)) == (255, 255, 255)
 
 
 def test_render_weather_screen_returns_rgb_image():
