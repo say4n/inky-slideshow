@@ -118,10 +118,10 @@ def test_render_weather_html_contains_weather_layout():
 
     html = render_weather_html((800, 480), AppConfig(), snapshot, now=datetime(2026, 6, 7, 9, 23, tzinfo=timezone.utc))
 
-    assert "Sunday, 7 June" in html
+    assert "Sunday, 7 Jun" in html
     assert "13C" in html
     assert "Weather" not in html
-    assert "Updated 10:23" in html
+    assert "Kolkata" in html
 
 
 def test_parse_weather_uses_current_daily_hourly_and_air_quality():

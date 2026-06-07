@@ -475,7 +475,7 @@ def render_weather_screen_pillow(
     now: datetime | None = None,
 ) -> Image.Image:
     now = now or datetime.now(ZoneInfo(LONDON_TZ))
-    image = Image.new("RGB", resolution, "white")
+    image = Image.new("RGB", resolution, "black")
     draw = ImageDraw.Draw(image)
     width, height = resolution
     scale = min(width / 800, height / 480)
@@ -483,44 +483,64 @@ def render_weather_screen_pillow(
     def s(value: int) -> int:
         return max(1, int(value * scale))
 
-    title_font = _font(s(30))
-    time_font = _font(s(48))
-    temp_font = _font(s(86))
-    medium_font = _font(s(28))
-    small_font = _font(s(20))
-    tiny_font = _font(s(17))
+    rx = int(width * 0.45)
+    
+    draw.rectangle((0, 0, width, height), fill="black", outline="black", width=s(8))
+    draw.rectangle((rx, 0, width, height), fill="white")
+    draw.rectangle((0, 0, width, height), outline="black", width=s(8))
 
-    draw.rectangle((s(8), s(8), width - s(8), height - s(8)), outline="black", width=s(2))
     london_now = now.astimezone(ZoneInfo(LONDON_TZ))
     kolkata_now = now.astimezone(ZoneInfo(KOLKATA_TZ))
-    draw.text((s(34), s(28)), now.strftime("%A, %-d %B"), font=title_font, fill="black", anchor="la")
-    draw.text((width - s(34), s(24)), london_now.strftime("%H:%M"), font=time_font, fill="black", anchor="ra")
-    draw.text((width - s(34), s(80)), f"London  |  Kolkata {kolkata_now.strftime('%H:%M')}", font=small_font, fill="black", anchor="ra")
-    draw.line((s(34), s(112), width - s(34), s(112)), fill="black", width=s(2))
-
-    _draw_weather_icon(draw, (s(145), s(218)), s(70), snapshot.weather_code if snapshot else None)
-    draw.text((s(250), s(160)), _format_temp(snapshot.temperature_c if snapshot else None), font=temp_font, fill="black", anchor="la")
-    draw.text((s(255), s(244)), config.location_name, font=medium_font, fill="black", anchor="la")
-    draw.text((s(255), s(284)), f"Feels like {_format_temp(snapshot.feels_like_c if snapshot else None)}", font=small_font, fill="black", anchor="la")
-
-    metric_x = s(535)
-    metric_y = s(144)
-    sunrise = _time_label(snapshot.sunrise) if snapshot else "--:--"
-    sunset = _time_label(snapshot.sunset) if snapshot else "--:--"
-    _draw_metric(draw, (metric_x, metric_y), "Sunrise", sunrise, medium_font, small_font, s(220), s(56))
-    _draw_metric(draw, (metric_x, metric_y + s(82)), "Sunset", sunset, medium_font, small_font, s(220), s(56))
-    _draw_metric(draw, (metric_x, metric_y + s(164)), "Wind", f"{_format_number(snapshot.wind_mph if snapshot else None)} mph", medium_font, small_font, s(220), s(56))
-
-    summary_top = height - s(94)
-    draw.line((s(34), summary_top, width - s(34), summary_top), fill="black", width=s(2))
-    draw.text((s(58), summary_top + s(38)), "UV", font=small_font, fill="black", anchor="lm")
-    draw.text((s(138), summary_top + s(38)), _uv_label(snapshot.uv_index if snapshot else None), font=medium_font, fill="black", anchor="lm")
-    draw.text((s(300), summary_top + s(38)), "Air", font=small_font, fill="black", anchor="lm")
-    draw.text((s(380), summary_top + s(38)), _aqi_label(snapshot.air_quality_index if snapshot else None), font=medium_font, fill="black", anchor="lm")
-    draw.text((width - s(58), summary_top + s(38)), f"Updated {london_now.strftime('%H:%M')}", font=small_font, fill="black", anchor="rm")
+    
+    date_font = _font(s(32))
+    loc_font = _font(s(24))
+    time_font = _font(s(84))
+    cities_font = _font(s(16))
+    
+    draw.text((s(30), s(30)), now.strftime("%A, %-d %b").upper(), font=date_font, fill="white", anchor="la")
+    draw.text((s(30), s(70)), config.location_name, font=loc_font, fill="#cccccc", anchor="la")
+    draw.text((s(30), s(100)), london_now.strftime("%H:%M"), font=time_font, fill="white", anchor="la")
+    
+    icon_center = (rx // 2, height // 2 + s(10))
+    icon_radius = s(80)
+    draw.ellipse((icon_center[0] - icon_radius, icon_center[1] - icon_radius, icon_center[0] + icon_radius, icon_center[1] + icon_radius), fill="#FFB300", outline="#FFA000", width=s(6))
+    
+    draw.text((s(30), height - s(40)), f"KOLKATA {kolkata_now.strftime('%H:%M')}", font=cities_font, fill="#aaaaaa", anchor="la")
+    
+    temp_font = _font(s(140))
+    feels_font = _font(s(24))
+    label_font = _font(s(16))
+    val_font = _font(s(36))
+    
+    temp_text = _format_temp(snapshot.temperature_c if snapshot else None)
+    feels_text = f"FL {_format_temp(snapshot.feels_like_c if snapshot else None)}"
+    
+    draw.text((rx + s(30), s(30)), temp_text, font=temp_font, fill="black", anchor="la")
+    draw.text((width - s(30), s(140)), feels_text, font=feels_font, fill="#555555", anchor="ra")
+    
+    draw.line((rx + s(30), s(170), width - s(30), s(170)), fill="black", width=s(6))
+    
+    metrics = [
+        ("SUNRISE", _time_label(snapshot.sunrise) if snapshot else "--:--"),
+        ("SUNSET", _time_label(snapshot.sunset) if snapshot else "--:--"),
+        ("WIND", f"{_format_number(snapshot.wind_mph if snapshot else None)} mph"),
+        ("UV INDEX", _uv_label(snapshot.uv_index if snapshot else None)),
+        ("AIR QUALITY", _aqi_label(snapshot.air_quality_index if snapshot else None)),
+    ]
+    
+    my_y = s(200)
+    col_w = (width - rx - s(60)) // 2
+    for i, (m_label, m_val) in enumerate(metrics):
+        col = i % 2
+        row = i // 2
+        x = rx + s(30) + col * col_w + (s(15) if col == 1 else 0)
+        y = my_y + row * s(70)
+        draw.line((x, y, x, y + s(45)), fill="#FFB300", width=s(6))
+        draw.text((x + s(14), y), m_label, font=label_font, fill="#555555", anchor="la")
+        draw.text((x + s(14), y + s(18)), m_val, font=val_font, fill="black", anchor="la")
 
     if snapshot is None:
-        draw.text((width // 2, height - s(32)), "weather unavailable", font=tiny_font, fill="black", anchor="ma")
+        draw.text((width // 2, height - s(32)), "weather unavailable", font=_font(s(17)), fill="black", anchor="ma")
 
     return image
 
