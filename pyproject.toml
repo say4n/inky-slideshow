@@ -28,6 +28,7 @@ dependencies = [
   "inky",
   "loguru",
   "Pillow",
+  "pillow-heif",
   "Werkzeug",
 ]
 
@@ -47,6 +48,7 @@ dependencies = [
   "loguru",
   "Flask>=2.0",
   "Pillow",
+  "pillow-heif",
   "pytest",
 ]
 
@@ -61,6 +63,7 @@ dependencies = [
   "Flask>=2.0",
   "loguru",
   "Pillow",
+  "pillow-heif",
   "pytest",
 ]
 

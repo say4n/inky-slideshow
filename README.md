@@ -54,7 +54,7 @@ hatch run slideshow /home/sayan/images
 
 The admin UI listens on `http://<frame-host>:8080` by default. Use it to upload
 or delete photos, change the photo/weather durations, and adjust the weather
-location.
+location. Supported photo formats are JPEG, PNG, HEIC, and HEIF.
 
 Default timings are 60 seconds for each photo and 30 seconds for the weather
 screen:

@@ -34,6 +34,7 @@ def test_config_store_creates_and_reloads_defaults(tmp_path):
 
 def test_managed_photo_path_rejects_unsafe_names(tmp_path):
     assert managed_photo_path(tmp_path, "frame.jpg") == (tmp_path / "frame.jpg").resolve()
+    assert managed_photo_path(tmp_path, "frame.heic") == (tmp_path / "frame.heic").resolve()
 
     with pytest.raises(ValueError):
         managed_photo_path(tmp_path, "../frame.jpg")
@@ -45,9 +46,11 @@ def test_managed_photo_path_rejects_unsafe_names(tmp_path):
 def test_list_photos_filters_allowed_extensions(tmp_path):
     (tmp_path / "b.jpg").write_bytes(b"")
     (tmp_path / "a.png").write_bytes(b"")
-    (tmp_path / "c.txt").write_bytes(b"")
+    (tmp_path / "c.heic").write_bytes(b"")
+    (tmp_path / "d.heif").write_bytes(b"")
+    (tmp_path / "notes.txt").write_bytes(b"")
 
-    assert [path.name for path in list_photos(tmp_path)] == ["a.png", "b.jpg"]
+    assert [path.name for path in list_photos(tmp_path)] == ["a.png", "b.jpg", "c.heic", "d.heif"]
 
 
 def test_render_weather_screen_returns_rgb_image():

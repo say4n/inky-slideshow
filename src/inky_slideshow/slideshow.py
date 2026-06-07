@@ -23,14 +23,21 @@ try:
 except ImportError:  # pragma: no cover - Python < 3.9
     from backports.zoneinfo import ZoneInfo
 
+try:
+    from pillow_heif import register_heif_opener
+except ImportError:  # pragma: no cover - dependency is optional for import-only test environments
+    register_heif_opener = None
 
-ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg"}
+if register_heif_opener is not None:
+    register_heif_opener()
+
+ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".heic", ".heif"}
 DEFAULT_CONFIG_PATH = Path("~/.config/inky-slideshow/config.json").expanduser()
 DEFAULT_LOCATION_NAME = "London"
 DEFAULT_LATITUDE = 51.5072
 DEFAULT_LONGITUDE = -0.1276
 LONDON_TZ = "Europe/London"
-MUMBAI_TZ = "Asia/Kolkata"
+KOLKATA_TZ = "Asia/Kolkata"
 
 
 @dataclass
@@ -297,11 +304,11 @@ def render_weather_screen(
     draw.text((s(292), s(188)), f"Feels like {feels_like}", font=small_font, fill="black", anchor="la")
 
     london_now = now.astimezone(ZoneInfo(LONDON_TZ))
-    mumbai_now = now.astimezone(ZoneInfo(MUMBAI_TZ))
+    kolkata_now = now.astimezone(ZoneInfo(KOLKATA_TZ))
     draw.text((s(475), s(120)), "London", font=medium_font, fill="black", anchor="la")
     draw.text((s(665), s(120)), london_now.strftime("%H:%M"), font=large_font, fill="black", anchor="ma")
-    draw.text((s(475), s(170)), "Mumbai", font=medium_font, fill="black", anchor="la")
-    draw.text((s(665), s(170)), mumbai_now.strftime("%H:%M"), font=large_font, fill="black", anchor="ma")
+    draw.text((s(475), s(170)), "Kolkata", font=medium_font, fill="black", anchor="la")
+    draw.text((s(665), s(170)), kolkata_now.strftime("%H:%M"), font=large_font, fill="black", anchor="ma")
 
     hourly = snapshot.hourly if snapshot else []
     x_start = s(56)
@@ -653,7 +660,7 @@ ADMIN_TEMPLATE = """
       <section>
         <h2>Upload Photo</h2>
         <form action="/photos" method="post" enctype="multipart/form-data">
-          <input name="photo" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" required>
+          <input name="photo" type="file" accept=".png,.jpg,.jpeg,.heic,.heif,image/png,image/jpeg,image/heic,image/heif" required>
           <button type="submit">Upload</button>
         </form>
       </section>
