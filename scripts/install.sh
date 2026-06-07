@@ -66,18 +66,31 @@ install_os_packages() {
   command -v python3 >/dev/null 2>&1 || missing+=(python3)
   python3 -m venv --help >/dev/null 2>&1 || missing+=(python3-venv)
 
-  if [[ "${#missing[@]}" -eq 0 ]]; then
-    return
-  fi
-
   if command -v apt-get >/dev/null 2>&1; then
     "${SUDO[@]}" apt-get update
-    "${SUDO[@]}" apt-get install -y git python3 python3-venv python3-pip
+    "${SUDO[@]}" apt-get install -y \
+      build-essential \
+      git \
+      python3 \
+      python3-dev \
+      python3-pip \
+      python3-venv
     return
   fi
 
-  echo "Missing required commands: ${missing[*]}" >&2
-  echo "Install git, python3, python3-venv, and python3-pip, then rerun this installer." >&2
+  if [[ "${#missing[@]}" -eq 0 ]] && python3 - <<'PY'
+import pathlib
+import sysconfig
+
+include_dir = pathlib.Path(sysconfig.get_paths()["include"])
+raise SystemExit(0 if (include_dir / "Python.h").exists() else 1)
+PY
+  then
+    return
+  fi
+
+  echo "Missing required install prerequisites." >&2
+  echo "Install git, python3, python3-venv, python3-pip, python3-dev, and build-essential, then rerun this installer." >&2
   exit 1
 }
 
