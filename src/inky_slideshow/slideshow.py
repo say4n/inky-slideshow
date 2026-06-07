@@ -331,9 +331,10 @@ def render_weather_html(
     @page {{ margin: 0; }}
     * {{ box-sizing: border-box; }}
     html, body {{ margin: 0; width: {resolution[0]}px; height: {resolution[1]}px; overflow: hidden; background: #ffffff; }}
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
     body {{
       color: #000;
-      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      font-family: 'Inter', sans-serif;
       padding: 15px;
     }}
     .frame {{
@@ -505,51 +506,68 @@ def render_weather_screen_pillow(
     snapshot: WeatherSnapshot | None,
     now: datetime | None = None,
 ) -> Image.Image:
+    from PIL import ImageFilter
     now = now or datetime.now(ZoneInfo(LONDON_TZ))
     image = Image.new("RGB", resolution, "black")
     draw = ImageDraw.Draw(image)
     width, height = resolution
-    scale = min(width / 800, height / 480)
-
-    def s(value: int) -> int:
-        return max(1, int(value * scale))
-
-    rx = int(width * 0.45)
     
-    draw.rectangle((0, 0, width, height), fill="black", outline="black", width=s(8))
-    draw.rectangle((rx, 0, width, height), fill="white")
-    draw.rectangle((0, 0, width, height), outline="black", width=s(8))
-
+    is_vertical = height > width
+    rx = int(width * 0.45) if not is_vertical else width
+    ry = height if not is_vertical else int(height * 0.45)
+    
+    if not is_vertical:
+        draw.rectangle((rx, 0, width, height), fill="white")
+    else:
+        draw.rectangle((0, ry, width, height), fill="white")
+    
     london_now = now.astimezone(ZoneInfo(LONDON_TZ))
     kolkata_now = now.astimezone(ZoneInfo(KOLKATA_TZ))
     
-    date_font = _font(s(32))
-    loc_font = _font(s(24))
-    time_font = _font(s(84))
-    cities_font = _font(s(16))
+    date_font = _font(32, "Black")
+    loc_font = _font(24, "Medium")
+    time_font = _font(110, "Black")
+    cities_font = _font(16, "Bold")
     
-    draw.text((s(30), s(30)), now.strftime("%A, %-d %b").upper(), font=date_font, fill="white", anchor="la")
-    draw.text((s(30), s(70)), config.location_name, font=loc_font, fill="#cccccc", anchor="la")
-    draw.text((s(30), s(100)), london_now.strftime("%H:%M"), font=time_font, fill="white", anchor="la")
+    draw.text((40, 48), now.strftime("%A, %-d %b").upper(), font=date_font, fill="white", anchor="lt")
+    draw.text((40, 88), config.location_name, font=loc_font, fill="#a1a1aa", anchor="lt")
     
-    icon_center = (rx // 2, height // 2 + s(10))
-    icon_radius = s(80)
-    draw.ellipse((icon_center[0] - icon_radius, icon_center[1] - icon_radius, icon_center[0] + icon_radius, icon_center[1] + icon_radius), fill="#FFB300", outline="#FFA000", width=s(6))
+    sun_x = rx // 2 if not is_vertical else width // 2
+    sun_y = int(height * 0.6) if not is_vertical else int(ry * 0.6)
+    sun_radius = 80
     
-    draw.text((s(30), height - s(40)), f"KOLKATA {kolkata_now.strftime('%H:%M')}", font=cities_font, fill="#aaaaaa", anchor="la")
+    glow_image = Image.new("RGBA", resolution, (0,0,0,0))
+    glow_draw = ImageDraw.Draw(glow_image)
+    glow_draw.ellipse((sun_x - sun_radius, sun_y - sun_radius, sun_x + sun_radius, sun_y + sun_radius), fill=(251, 191, 36, 102))
+    glow_image = glow_image.filter(ImageFilter.GaussianBlur(80))
+    image.paste(glow_image, (0, 0), glow_image)
     
-    temp_font = _font(s(140))
-    feels_font = _font(s(24))
-    label_font = _font(s(16))
-    val_font = _font(s(36))
+    draw.ellipse((sun_x - sun_radius, sun_y - sun_radius, sun_x + sun_radius, sun_y + sun_radius), fill="#fbbf24")
+    
+    time_y = height // 2 if not is_vertical else ry // 2
+    draw.text((40, time_y), london_now.strftime("%H:%M"), font=time_font, fill="white", anchor="lm")
+    
+    bottom_y = height - 48 if not is_vertical else ry - 48
+    draw.text((40, bottom_y), f"LONDON  |  KOLKATA {kolkata_now.strftime('%H:%M')}", font=cities_font, fill="#71717a", anchor="ls")
+    
+    temp_font = _font(140, "Black")
+    feels_font = _font(24, "Bold")
+    label_font = _font(14, "Bold")
+    val_font = _font(36, "Black")
     
     temp_text = _format_temp(snapshot.temperature_c if snapshot else None)
     feels_text = f"FL {_format_temp(snapshot.feels_like_c if snapshot else None)}"
     
-    draw.text((rx + s(30), s(30)), temp_text, font=temp_font, fill="black", anchor="la")
-    draw.text((width - s(30), s(140)), feels_text, font=feels_font, fill="#555555", anchor="ra")
+    right_x = rx if not is_vertical else 0
+    right_y = 0 if not is_vertical else ry
+    right_w = width - right_x
     
-    draw.line((rx + s(30), s(170), width - s(30), s(170)), fill="black", width=s(6))
+    temp_baseline = right_y + 160
+    draw.text((right_x + 40, temp_baseline), temp_text, font=temp_font, fill="#09090b", anchor="ls")
+    draw.text((right_x + right_w - 40, temp_baseline), feels_text, font=feels_font, fill="#71717a", anchor="rs")
+    
+    divider_y = temp_baseline + 24
+    draw.rectangle((right_x + 40, divider_y, right_x + right_w - 40, divider_y + 8), fill="#09090b")
     
     metrics = [
         ("SUNRISE", _time_label(snapshot.sunrise) if snapshot else "--:--"),
@@ -559,125 +577,27 @@ def render_weather_screen_pillow(
         ("AIR QUALITY", _aqi_label(snapshot.air_quality_index if snapshot else None)),
     ]
     
-    my_y = s(200)
-    col_w = (width - rx - s(60)) // 2
+    my_y = divider_y + 40
+    col_w = (right_w - 80 - 24) // 2
     for i, (m_label, m_val) in enumerate(metrics):
         col = i % 2
         row = i // 2
-        x = rx + s(30) + col * col_w + (s(15) if col == 1 else 0)
-        y = my_y + row * s(70)
-        draw.line((x, y, x, y + s(45)), fill="#FFB300", width=s(6))
-        draw.text((x + s(14), y), m_label, font=label_font, fill="#555555", anchor="la")
-        draw.text((x + s(14), y + s(18)), m_val, font=val_font, fill="black", anchor="la")
+        x = right_x + 40 + col * (col_w + 24)
+        y = my_y + row * 80
+        draw.rounded_rectangle((x, y, x + 6, y + 45), radius=4, fill="#fbbf24")
+        draw.text((x + 20, y + 16), m_label, font=label_font, fill="#a1a1aa", anchor="ls")
+        draw.text((x + 20, y + 46), m_val, font=val_font, fill="#09090b", anchor="ls")
 
     if snapshot is None:
-        draw.text((width // 2, height - s(32)), "weather unavailable", font=_font(s(17)), fill="black", anchor="ma")
+        draw.text((right_x + right_w // 2, height - 48), "weather unavailable", font=_font(14, "Bold"), fill="#ef4444", anchor="ms")
 
     return image
 
-
-def _font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    for font_name in (
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
-        "/System/Library/Fonts/Supplemental/Arial.ttf",
-        "DejaVuSans.ttf",
-        "Arial.ttf",
-    ):
-        try:
-            return ImageFont.truetype(font_name, size)
-        except OSError:
-            pass
+def _font(size: int, weight: str = "Regular") -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    font_path = Path(__file__).parent / "assets" / "fonts" / f"Inter-{weight}.ttf"
+    if font_path.exists():
+        return ImageFont.truetype(str(font_path), size)
     return ImageFont.load_default()
-
-
-def _draw_weather_icon(draw: ImageDraw.ImageDraw, center: tuple[int, int], radius: int, code: int | None) -> None:
-    x, y = center
-    stroke = max(2, radius // 9)
-    if code in {45, 48}:
-        for offset in (-radius // 2, 0, radius // 2):
-            draw.line((x - radius, y + offset, x + radius, y + offset), fill="black", width=stroke)
-        return
-    if code is not None and code >= 80:
-        _draw_cloud(draw, center, radius, stroke)
-        for offset in (-radius // 3, radius // 3):
-            draw.line((x + offset, y + radius // 2, x + offset - radius // 5, y + radius), fill="black", width=stroke)
-        return
-    if code is not None and code >= 51:
-        _draw_cloud(draw, center, radius, stroke)
-        return
-    if code is not None and code >= 1:
-        draw.arc((x - radius, y - radius // 3, x + radius, y + radius), 180, 360, fill="black", width=stroke)
-        draw.line((x - radius, y + radius // 3, x + radius, y + radius // 3), fill="black", width=stroke)
-        for angle in (210, 245, 295, 330):
-            _ray(draw, x, y, radius, angle, stroke)
-        return
-    draw.ellipse((x - radius, y - radius, x + radius, y + radius), outline="black", width=stroke)
-    for angle in range(0, 360, 45):
-        _ray(draw, x, y, radius, angle, stroke)
-
-
-def _draw_cloud(draw: ImageDraw.ImageDraw, center: tuple[int, int], radius: int, stroke: int) -> None:
-    x, y = center
-    draw.arc((x - radius, y - radius // 2, x, y + radius // 2), 180, 360, fill="black", width=stroke)
-    draw.arc((x - radius // 3, y - radius, x + radius // 2, y + radius // 4), 180, 360, fill="black", width=stroke)
-    draw.arc((x, y - radius // 2, x + radius, y + radius // 2), 180, 360, fill="black", width=stroke)
-    draw.line((x - radius, y, x + radius, y), fill="black", width=stroke)
-
-
-def _ray(draw: ImageDraw.ImageDraw, x: int, y: int, radius: int, angle: int, stroke: int) -> None:
-    radians = math.radians(angle)
-    inner = radius + radius // 4
-    outer = radius + radius // 2
-    draw.line(
-        (
-            x + int(math.cos(radians) * inner),
-            y + int(math.sin(radians) * inner),
-            x + int(math.cos(radians) * outer),
-            y + int(math.sin(radians) * outer),
-        ),
-        fill="black",
-        width=stroke,
-    )
-
-
-def _draw_sunrise(draw: ImageDraw.ImageDraw, center: tuple[int, int], radius: int) -> None:
-    x, y = center
-    draw.arc((x - radius, y - radius, x + radius, y + radius), 180, 360, fill="black", width=max(2, radius // 10))
-    draw.line((x - radius, y, x + radius, y), fill="black", width=max(2, radius // 10))
-    draw.line((x, y - radius - 16, x, y - radius // 2), fill="black", width=max(2, radius // 10))
-    draw.line((x - 8, y - radius - 8, x, y - radius - 16, x + 8, y - radius - 8), fill="black", width=max(2, radius // 12))
-
-
-def _draw_sunset(draw: ImageDraw.ImageDraw, center: tuple[int, int], radius: int) -> None:
-    x, y = center
-    draw.arc((x - radius, y - radius, x + radius, y + radius), 180, 360, fill="black", width=max(2, radius // 10))
-    draw.line((x - radius, y, x + radius, y), fill="black", width=max(2, radius // 10))
-    draw.line((x, y - radius - 16, x, y - radius // 2), fill="black", width=max(2, radius // 10))
-    draw.line((x - 8, y - radius - 8, x, y - radius, x + 8, y - radius - 8), fill="black", width=max(2, radius // 12))
-
-
-def _draw_wind(draw: ImageDraw.ImageDraw, center: tuple[int, int], radius: int) -> None:
-    x, y = center
-    width = max(2, radius // 12)
-    for offset in (-radius // 3, 0, radius // 3):
-        draw.line((x - radius, y + offset, x + radius // 2, y + offset), fill="black", width=width)
-        draw.arc((x + radius // 3, y + offset - radius // 4, x + radius, y + offset + radius // 4), 270, 90, fill="black", width=width)
-
-
-def _draw_uv(draw: ImageDraw.ImageDraw, center: tuple[int, int], radius: int) -> None:
-    x, y = center
-    draw.rounded_rectangle((x - radius, y - radius, x + radius, y + radius), radius=radius // 4, outline="black", width=max(2, radius // 10))
-    font = _font(radius)
-    draw.text((x, y), "UV", font=font, fill="black", anchor="mm")
-
-
-def _draw_aqi(draw: ImageDraw.ImageDraw, center: tuple[int, int], radius: int) -> None:
-    x, y = center
-    draw.arc((x - radius, y - radius, x + radius, y + radius), 180, 360, fill="black", width=max(2, radius // 10))
-    for angle in range(200, 341, 35):
-        _ray(draw, x, y, radius // 2, angle, max(2, radius // 16))
-    draw.rectangle((x - radius, y, x + radius, y + radius // 4), fill="white", outline="black", width=max(2, radius // 10))
 
 
 def _draw_metric(
