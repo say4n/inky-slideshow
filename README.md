@@ -31,6 +31,7 @@ You can override installer defaults with environment variables:
 curl -fsSL https://raw.githubusercontent.com/say4n/inky-slideshow/main/scripts/install.sh | \
   INKY_PHOTO_DIR=/home/sayan/images \
   INKY_WEB_PORT=8080 \
+  INKY_FRAME_ORIENTATION=horizontal \
   INKY_PHOTO_SECONDS=60 \
   INKY_WEATHER_SECONDS=30 \
   bash
@@ -39,8 +40,8 @@ curl -fsSL https://raw.githubusercontent.com/say4n/inky-slideshow/main/scripts/i
 Supported installer variables include `INKY_INSTALL_DIR`, `INKY_PHOTO_DIR`,
 `INKY_CONFIG_PATH`, `INKY_SERVICE_USER`, `INKY_SERVICE_NAME`, `INKY_REPO_URL`,
 `INKY_REPO_REF`, `INKY_WEB_HOST`, `INKY_WEB_PORT`, `INKY_PHOTO_SECONDS`,
-`INKY_WEATHER_SECONDS`, `INKY_LOCATION_NAME`, `INKY_LATITUDE`, and
-`INKY_LONGITUDE`.
+`INKY_WEATHER_SECONDS`, `INKY_FRAME_ORIENTATION`, `INKY_LOCATION_NAME`,
+`INKY_LATITUDE`, and `INKY_LONGITUDE`.
 
 ## Usage
 

@@ -11,8 +11,10 @@ from inky_slideshow.slideshow import (
     WeatherSnapshot,
     create_app,
     fit_photo,
+    image_for_display,
     list_photos,
     managed_photo_path,
+    oriented_resolution,
     parse_weather,
     render_weather_screen,
 )
@@ -67,6 +69,14 @@ def test_fit_photo_preserves_full_image_with_white_padding(tmp_path):
     assert fitted.getpixel((50, 25)) == (0, 0, 0)
     assert fitted.getpixel((50, 74)) == (0, 0, 0)
     assert fitted.getpixel((50, 90)) == (255, 255, 255)
+
+
+def test_orientation_helpers_choose_frame_shape_and_native_display_size():
+    assert oriented_resolution((480, 800), "horizontal") == (800, 480)
+    assert oriented_resolution((480, 800), "vertical") == (480, 800)
+
+    image = Image.new("RGB", (800, 480), "white")
+    assert image_for_display(image, (480, 800)).size == (480, 800)
 
 
 def test_render_weather_screen_returns_rgb_image():
@@ -138,6 +148,7 @@ def test_flask_routes_update_upload_and_delete(tmp_path):
         data={
             "photo_seconds": "5",
             "weather_seconds": "3",
+            "frame_orientation": "vertical",
             "location_name": "Paris",
             "latitude": "48.8566",
             "longitude": "2.3522",
@@ -145,9 +156,10 @@ def test_flask_routes_update_upload_and_delete(tmp_path):
     )
     assert response.status_code == 302
     assert store.load().photo_seconds == 5
+    assert store.load().frame_orientation == "vertical"
     assert store.load().location_name == "Paris"
 
-    image = Image.new("RGB", (10, 10), "white")
+    image = Image.new("RGB", (12, 8), "white")
     image_bytes = io.BytesIO()
     image.save(image_bytes, format="JPEG")
     image_bytes.seek(0)
@@ -158,6 +170,11 @@ def test_flask_routes_update_upload_and_delete(tmp_path):
 
     response = client.get("/photos/test.jpg")
     assert response.status_code == 200
+
+    response = client.post("/photos/test.jpg/rotate", data={"direction": "right"})
+    assert response.status_code == 302
+    with Image.open(photo_dir / "test.jpg") as rotated:
+        assert rotated.size == (8, 12)
 
     response = client.post("/photos/test.jpg/delete")
     assert response.status_code == 302

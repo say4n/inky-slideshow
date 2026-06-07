@@ -23,6 +23,7 @@ WEB_PORT="${INKY_WEB_PORT:-8080}"
 LOCATION_NAME="${INKY_LOCATION_NAME:-London}"
 LATITUDE="${INKY_LATITUDE:-51.5072}"
 LONGITUDE="${INKY_LONGITUDE:--0.1276}"
+FRAME_ORIENTATION="${INKY_FRAME_ORIENTATION:-horizontal}"
 LEGACY_UNIT="${SERVICE_NAME}.service"
 WEB_UNIT="${SERVICE_NAME}-web.service"
 DISPLAY_UNIT="${SERVICE_NAME}-display.service"
@@ -173,7 +174,7 @@ Wants=network-online.target
 Type=simple
 User=${SERVICE_USER}
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=${INSTALL_DIR}/.venv/bin/python ${INSTALL_DIR}/src/inky_slideshow/slideshow.py "${PHOTO_DIR}" --mode web --config "${CONFIG_PATH}" --photo-seconds ${PHOTO_SECONDS} --weather-seconds ${WEATHER_SECONDS} --host ${WEB_HOST} --port ${WEB_PORT} --location-name "${LOCATION_NAME}" --latitude ${LATITUDE} --longitude ${LONGITUDE}
+ExecStart=${INSTALL_DIR}/.venv/bin/python ${INSTALL_DIR}/src/inky_slideshow/slideshow.py "${PHOTO_DIR}" --mode web --config "${CONFIG_PATH}" --photo-seconds ${PHOTO_SECONDS} --weather-seconds ${WEATHER_SECONDS} --host ${WEB_HOST} --port ${WEB_PORT} --location-name "${LOCATION_NAME}" --latitude ${LATITUDE} --longitude ${LONGITUDE} --frame-orientation ${FRAME_ORIENTATION}
 Restart=always
 RestartSec=10
 
@@ -191,7 +192,7 @@ Wants=network-online.target ${WEB_UNIT}
 Type=simple
 User=${SERVICE_USER}
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=${INSTALL_DIR}/.venv/bin/python ${INSTALL_DIR}/src/inky_slideshow/slideshow.py "${PHOTO_DIR}" --mode display --config "${CONFIG_PATH}" --photo-seconds ${PHOTO_SECONDS} --weather-seconds ${WEATHER_SECONDS} --host ${WEB_HOST} --port ${WEB_PORT} --location-name "${LOCATION_NAME}" --latitude ${LATITUDE} --longitude ${LONGITUDE}
+ExecStart=${INSTALL_DIR}/.venv/bin/python ${INSTALL_DIR}/src/inky_slideshow/slideshow.py "${PHOTO_DIR}" --mode display --config "${CONFIG_PATH}" --photo-seconds ${PHOTO_SECONDS} --weather-seconds ${WEATHER_SECONDS} --host ${WEB_HOST} --port ${WEB_PORT} --location-name "${LOCATION_NAME}" --latitude ${LATITUDE} --longitude ${LONGITUDE} --frame-orientation ${FRAME_ORIENTATION}
 Restart=always
 RestartSec=10
 

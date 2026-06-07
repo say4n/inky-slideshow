@@ -38,6 +38,7 @@ DEFAULT_LATITUDE = 51.5072
 DEFAULT_LONGITUDE = -0.1276
 LONDON_TZ = "Europe/London"
 KOLKATA_TZ = "Asia/Kolkata"
+VALID_ORIENTATIONS = {"horizontal", "vertical"}
 
 
 @dataclass
@@ -49,6 +50,7 @@ class AppConfig:
     location_name: str = DEFAULT_LOCATION_NAME
     latitude: float = DEFAULT_LATITUDE
     longitude: float = DEFAULT_LONGITUDE
+    frame_orientation: str = "horizontal"
 
 
 @dataclass
@@ -86,6 +88,7 @@ class ConfigStore:
             values = asdict(self.defaults)
             field_names = {field.name for field in fields(AppConfig)}
             values.update({key: value for key, value in data.items() if key in field_names})
+            values["frame_orientation"] = normalize_orientation(values.get("frame_orientation"))
             return AppConfig(**values)
 
     def save(self, config: AppConfig) -> None:
@@ -237,6 +240,23 @@ def _optional_int(value: Any) -> int | None:
         return None
 
 
+def normalize_orientation(value: Any) -> str:
+    return value if value in VALID_ORIENTATIONS else "horizontal"
+
+
+def oriented_resolution(resolution: tuple[int, int], orientation: str) -> tuple[int, int]:
+    short, long = sorted(resolution)
+    return (long, short) if normalize_orientation(orientation) == "horizontal" else (short, long)
+
+
+def image_for_display(image: Image.Image, display_resolution: tuple[int, int]) -> Image.Image:
+    if image.size == display_resolution:
+        return image
+    if image.size == (display_resolution[1], display_resolution[0]):
+        return image.rotate(90, expand=True)
+    return ImageOps.contain(image, display_resolution)
+
+
 def list_photos(photo_dir: Path) -> list[Path]:
     if not photo_dir.exists():
         return []
@@ -274,6 +294,15 @@ def validate_image(path: Path) -> None:
         image.verify()
 
 
+def rotate_photo(path: Path, degrees: int) -> None:
+    with Image.open(path) as image:
+        rotated = ImageOps.exif_transpose(image).convert("RGB").rotate(degrees, expand=True)
+        save_kwargs: dict[str, Any] = {}
+        if path.suffix.lower() in {".jpg", ".jpeg"}:
+            save_kwargs = {"quality": 95, "subsampling": 0}
+        rotated.save(path, **save_kwargs)
+
+
 def render_weather_screen(
     resolution: tuple[int, int],
     config: AppConfig,
@@ -296,55 +325,36 @@ def render_weather_screen(
     tiny_font = _font(s(16))
 
     draw.rectangle((s(8), s(8), width - s(8), height - s(8)), outline="black", width=s(2))
-    draw.text((width // 2, s(26)), now.strftime("%A, %-d %B"), font=title_font, fill="black", anchor="ma")
-
-    _draw_weather_icon(draw, (s(118), s(156)), s(82), snapshot.weather_code if snapshot else None)
-    temperature = _format_temp(snapshot.temperature_c if snapshot else None)
-    feels_like = _format_temp(snapshot.feels_like_c if snapshot else None)
-    draw.text((s(290), s(122)), temperature, font=large_font, fill="black", anchor="la")
-    draw.text((s(292), s(188)), f"Feels like {feels_like}", font=small_font, fill="black", anchor="la")
-
     london_now = now.astimezone(ZoneInfo(LONDON_TZ))
     kolkata_now = now.astimezone(ZoneInfo(KOLKATA_TZ))
-    draw.text((s(475), s(120)), "London", font=medium_font, fill="black", anchor="la")
-    draw.text((s(665), s(120)), london_now.strftime("%H:%M"), font=large_font, fill="black", anchor="ma")
-    draw.text((s(475), s(170)), "Kolkata", font=medium_font, fill="black", anchor="la")
-    draw.text((s(665), s(170)), kolkata_now.strftime("%H:%M"), font=large_font, fill="black", anchor="ma")
+    draw.text((s(34), s(30)), now.strftime("%A, %-d %B"), font=title_font, fill="black", anchor="la")
+    draw.text((width - s(34), s(36)), london_now.strftime("%H:%M"), font=large_font, fill="black", anchor="ra")
+    draw.text((width - s(34), s(94)), f"London  |  Kolkata {kolkata_now.strftime('%H:%M')}", font=small_font, fill="black", anchor="ra")
 
-    hourly = snapshot.hourly if snapshot else []
-    x_start = s(56)
-    x_step = s(74)
-    y_time = s(262)
-    y_icon = s(302)
-    draw.text((x_start, y_time), "Now", font=medium_font, fill="black", anchor="ma")
-    _draw_weather_icon(draw, (x_start, y_icon), s(20), snapshot.weather_code if snapshot else None)
-    for offset, item in enumerate(hourly[:9], start=1):
-        x = x_start + x_step * offset
-        hour_text = _hour_label(item.get("time"))
-        draw.text((x, y_time), hour_text, font=medium_font, fill="black", anchor="ma")
-        _draw_weather_icon(draw, (x, y_icon), s(20), _optional_int(item.get("weather_code")))
+    _draw_weather_icon(draw, (s(120), s(190)), s(70), snapshot.weather_code if snapshot else None)
+    draw.text((s(225), s(148)), _format_temp(snapshot.temperature_c if snapshot else None), font=large_font, fill="black", anchor="la")
+    draw.text((s(230), s(214)), config.location_name, font=medium_font, fill="black", anchor="la")
+    draw.text((s(230), s(250)), f"Feels like {_format_temp(snapshot.feels_like_c if snapshot else None)}", font=small_font, fill="black", anchor="la")
 
+    metric_x = s(520)
+    metric_y = s(155)
     sunrise = _time_label(snapshot.sunrise) if snapshot else "--:--"
     sunset = _time_label(snapshot.sunset) if snapshot else "--:--"
-    _draw_sunrise(draw, (s(72), s(377)), s(38))
-    draw.text((s(45), s(416)), "Sunrise", font=small_font, fill="black", anchor="la")
-    draw.text((s(45), s(446)), sunrise, font=medium_font, fill="black", anchor="la")
-    _draw_sunset(draw, (s(202), s(377)), s(44))
-    draw.text((s(170), s(416)), "Sunset", font=small_font, fill="black", anchor="la")
-    draw.text((s(170), s(446)), sunset, font=medium_font, fill="black", anchor="la")
+    _draw_metric(draw, (metric_x, metric_y), "Sunrise", sunrise, medium_font, small_font, s(220), s(44))
+    _draw_metric(draw, (metric_x, metric_y + s(66)), "Sunset", sunset, medium_font, small_font, s(220), s(44))
+    _draw_metric(draw, (metric_x, metric_y + s(132)), "Wind", f"{_format_number(snapshot.wind_mph if snapshot else None)} mph", medium_font, small_font, s(220), s(44))
+    _draw_metric(draw, (metric_x, metric_y + s(198)), "UV", _uv_label(snapshot.uv_index if snapshot else None), medium_font, small_font, s(220), s(44))
 
-    draw.text((s(320), s(372)), "wind", font=small_font, fill="black", anchor="ma")
-    _draw_wind(draw, (s(322), s(342)), s(42))
-    draw.text((s(320), s(420)), _format_number(snapshot.wind_mph if snapshot else None), font=medium_font, fill="black", anchor="ma")
-    draw.text((s(320), s(450)), "mph", font=small_font, fill="black", anchor="ma")
-
-    _draw_uv(draw, (s(435), s(338)), s(34))
-    draw.text((s(435), s(415)), "UV Index", font=small_font, fill="black", anchor="ma")
-    draw.text((s(435), s(448)), _uv_label(snapshot.uv_index if snapshot else None), font=medium_font, fill="black", anchor="ma")
-
-    _draw_aqi(draw, (s(585), s(342)), s(42))
-    draw.text((s(585), s(415)), "Air Quality", font=small_font, fill="black", anchor="ma")
-    draw.text((s(585), s(448)), _aqi_label(snapshot.air_quality_index if snapshot else None), font=medium_font, fill="black", anchor="ma")
+    hourly = snapshot.hourly if snapshot else []
+    strip_top = height - s(112)
+    draw.line((s(34), strip_top, width - s(34), strip_top), fill="black", width=s(2))
+    slots = hourly[:5]
+    slot_width = (width - s(68)) // max(1, len(slots) or 1)
+    for offset, item in enumerate(slots):
+        x = s(34) + slot_width * offset + slot_width // 2
+        draw.text((x, strip_top + s(22)), _hour_label(item.get("time")), font=small_font, fill="black", anchor="ma")
+        _draw_weather_icon(draw, (x, strip_top + s(58)), s(18), _optional_int(item.get("weather_code")))
+        draw.text((x, strip_top + s(92)), _format_temp(_optional_float(item.get("temperature_c"))), font=tiny_font, fill="black", anchor="ma")
 
     if snapshot is None:
         draw.text((width // 2, height - s(32)), "weather unavailable", font=tiny_font, fill="black", anchor="ma")
@@ -450,6 +460,22 @@ def _draw_aqi(draw: ImageDraw.ImageDraw, center: tuple[int, int], radius: int) -
     draw.rectangle((x - radius, y, x + radius, y + radius // 4), fill="white", outline="black", width=max(2, radius // 10))
 
 
+def _draw_metric(
+    draw: ImageDraw.ImageDraw,
+    origin: tuple[int, int],
+    label: str,
+    value: str,
+    value_font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    label_font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    width: int,
+    height: int,
+) -> None:
+    x, y = origin
+    draw.rounded_rectangle((x, y, x + width, y + height), radius=max(4, height // 8), outline="black", width=max(1, height // 18))
+    draw.text((x + 12, y + height // 2), label, font=label_font, fill="black", anchor="lm")
+    draw.text((x + width - 12, y + height // 2), value, font=value_font, fill="black", anchor="rm")
+
+
 def _format_temp(value: float | None) -> str:
     return "--" if value is None else f"{round(value)} deg"
 
@@ -512,6 +538,7 @@ def create_app(photo_dir: Path, config_store: ConfigStore) -> Flask:
             location_name=(request.form.get("location_name") or current.location_name).strip() or current.location_name,
             latitude=_float_value(request.form.get("latitude"), current.latitude),
             longitude=_float_value(request.form.get("longitude"), current.longitude),
+            frame_orientation=normalize_orientation(request.form.get("frame_orientation") or current.frame_orientation),
         )
         config_store.save(updated)
         return redirect(url_for("index"))
@@ -551,6 +578,22 @@ def create_app(photo_dir: Path, config_store: ConfigStore) -> Flask:
             abort(404)
         if target.exists():
             target.unlink()
+        return redirect(url_for("index"))
+
+    @app.route("/photos/<path:filename>/rotate", methods=["POST"])
+    def rotate_photo_route(filename: str) -> Response:
+        try:
+            target = managed_photo_path(photo_dir, filename)
+        except ValueError:
+            abort(404)
+        if not target.exists():
+            abort(404)
+        direction = request.form.get("direction", "right")
+        degrees = 90 if direction == "left" else -90
+        try:
+            rotate_photo(target, degrees)
+        except (OSError, UnidentifiedImageError):
+            abort(400, "Photo could not be rotated")
         return redirect(url_for("index"))
 
     return app
@@ -608,15 +651,16 @@ def run_display_loop(photo_dir: Path, config_store: ConfigStore) -> None:
     while True:
         config = config_store.load()
         photos = list_photos(photo_dir)
+        target_resolution = oriented_resolution(inky_display.resolution, config.frame_orientation)
         if photos:
             current_image = photos[index % len(photos)]
             logger.info("Displaying photo: {}", current_image)
             try:
-                image = fit_photo(current_image, inky_display.resolution)
+                image = fit_photo(current_image, target_resolution)
             except (OSError, UnidentifiedImageError):
                 logger.exception("Skipping unreadable photo: {}", current_image)
             else:
-                inky_display.set_image(image)
+                inky_display.set_image(image_for_display(image, inky_display.resolution))
                 try:
                     inky_display.show()
                 except Exception:
@@ -628,10 +672,11 @@ def run_display_loop(photo_dir: Path, config_store: ConfigStore) -> None:
             logger.warning("No photos found in {}", photo_dir)
 
         config = config_store.load()
+        target_resolution = oriented_resolution(inky_display.resolution, config.frame_orientation)
         logger.info("Displaying weather screen")
         snapshot = weather_client.fetch_or_cached(config)
-        weather_image = render_weather_screen(inky_display.resolution, config, snapshot)
-        inky_display.set_image(weather_image)
+        weather_image = render_weather_screen(target_resolution, config, snapshot)
+        inky_display.set_image(image_for_display(weather_image, inky_display.resolution))
         try:
             inky_display.show()
         except Exception:
@@ -648,55 +693,98 @@ ADMIN_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Inky Slideshow</title>
     <style>
-      :root { color-scheme: light; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-      body { margin: 0; background: #f7f7f2; color: #111; }
-      main { max-width: 960px; margin: 0 auto; padding: 24px; }
-      h1 { font-size: 28px; margin: 0 0 20px; }
-      h2 { font-size: 18px; margin: 0 0 12px; }
-      section { margin: 0 0 28px; }
-      form { display: grid; gap: 12px; }
-      label { display: grid; gap: 4px; font-weight: 600; }
-      input { font: inherit; padding: 9px 10px; border: 1px solid #999; border-radius: 6px; background: white; }
-      button { font: inherit; border: 1px solid #111; background: #111; color: white; padding: 9px 12px; border-radius: 6px; cursor: pointer; }
-      .settings { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; }
-      .photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 14px; }
-      .photo { background: white; border: 1px solid #ccc; border-radius: 8px; padding: 8px; }
-      .photo img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: #eee; margin-bottom: 8px; }
+      :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #f4f4ef; color: #151515; }
+      main { max-width: 1120px; margin: 0 auto; padding: 32px 24px 48px; }
+      header { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
+      h1 { font-size: 30px; line-height: 1; margin: 0; }
+      h2 { font-size: 16px; margin: 0 0 14px; }
+      section { margin: 0 0 24px; }
+      .muted { color: #666; font-size: 13px; margin: 4px 0 0; }
+      .panel { background: #fff; border: 1px solid #d9d9d2; border-radius: 8px; padding: 18px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04); }
+      .settings { display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap: 12px; align-items: end; }
+      label, .field { display: grid; gap: 6px; font-size: 13px; font-weight: 700; }
+      input { width: 100%; font: inherit; padding: 10px 11px; border: 1px solid #b8b8ae; border-radius: 6px; background: #fff; min-height: 42px; }
+      button { font: inherit; font-weight: 700; border: 1px solid #111; background: #111; color: white; padding: 10px 14px; border-radius: 6px; cursor: pointer; min-height: 42px; }
+      button.secondary { width: 100%; }
+      .orientation { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+      .orientation input { position: absolute; opacity: 0; pointer-events: none; }
+      .orientation label { display: block; font-size: 13px; font-weight: 700; }
+      .orientation span { display: block; text-align: center; border: 1px solid #b8b8ae; border-radius: 6px; padding: 10px 8px; background: #f8f8f5; min-height: 42px; }
+      .orientation input:checked + span { background: #111; color: #fff; border-color: #111; }
+      .upload { display: grid; grid-template-columns: 1fr 180px; gap: 12px; }
+      .photos-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+      .photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 14px; }
+      .photo { background: #fff; border: 1px solid #d5d5cd; border-radius: 8px; padding: 8px; }
+      .photo img { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: contain; background: #f2f2ed; border: 1px solid #e1e1da; border-radius: 5px; margin-bottom: 8px; }
+      .photos.vertical .photo img { aspect-ratio: 10 / 16; }
+      .actions { display: grid; grid-template-columns: 1fr 1fr 1.25fr; gap: 6px; }
       .photo form { display: block; }
-      .muted { color: #555; }
+      .icon-button { padding: 8px 6px; min-height: 38px; }
+      @media (max-width: 900px) {
+        main { padding: 20px 14px 36px; }
+        header { display: block; }
+        .settings { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .upload { grid-template-columns: 1fr; }
+      }
     </style>
   </head>
   <body>
     <main>
-      <h1>Inky Slideshow</h1>
-      <section>
+      <header>
+        <div>
+          <h1>Inky Slideshow</h1>
+          <p class="muted">Photo and weather display controls</p>
+        </div>
+      </header>
+      <section class="panel">
         <h2>Settings</h2>
         <form class="settings" action="/settings" method="post">
           <label>Photo seconds <input name="photo_seconds" type="number" min="1" value="{{ config.photo_seconds }}"></label>
           <label>Weather seconds <input name="weather_seconds" type="number" min="1" value="{{ config.weather_seconds }}"></label>
+          <div class="field">Frame
+            <div class="orientation">
+              <label><input name="frame_orientation" type="radio" value="horizontal" {% if config.frame_orientation == "horizontal" %}checked{% endif %}><span>Horizontal</span></label>
+              <label><input name="frame_orientation" type="radio" value="vertical" {% if config.frame_orientation == "vertical" %}checked{% endif %}><span>Vertical</span></label>
+            </div>
+          </div>
           <label>Location name <input name="location_name" value="{{ config.location_name }}"></label>
           <label>Latitude <input name="latitude" type="number" step="0.0001" value="{{ config.latitude }}"></label>
           <label>Longitude <input name="longitude" type="number" step="0.0001" value="{{ config.longitude }}"></label>
           <button type="submit">Save</button>
         </form>
       </section>
-      <section>
+      <section class="panel">
         <h2>Upload Photo</h2>
-        <form action="/photos" method="post" enctype="multipart/form-data">
+        <form class="upload" action="/photos" method="post" enctype="multipart/form-data">
           <input name="photo" type="file" accept=".png,.jpg,.jpeg,.heic,.heif,image/png,image/jpeg,image/heic,image/heif" required>
           <button type="submit">Upload</button>
         </form>
       </section>
-      <section>
-        <h2>Photos</h2>
+      <section class="panel">
+        <div class="photos-head">
+          <h2>Photos</h2>
+          <p class="muted">{{ photos|length }} uploaded</p>
+        </div>
         {% if photos %}
-        <div class="photos">
+        <div class="photos {{ config.frame_orientation }}">
           {% for photo in photos %}
           <div class="photo">
             <img src="{{ url_for('photo', filename=photo) }}" alt="{{ photo }}">
-            <form action="{{ url_for('delete_photo', filename=photo) }}" method="post">
-              <button type="submit">Delete</button>
-            </form>
+            <div class="actions">
+              <form action="{{ url_for('rotate_photo_route', filename=photo) }}" method="post">
+                <input type="hidden" name="direction" value="left">
+                <button class="secondary icon-button" type="submit" title="Rotate left">Left</button>
+              </form>
+              <form action="{{ url_for('rotate_photo_route', filename=photo) }}" method="post">
+                <input type="hidden" name="direction" value="right">
+                <button class="secondary icon-button" type="submit" title="Rotate right">Right</button>
+              </form>
+              <form action="{{ url_for('delete_photo', filename=photo) }}" method="post">
+                <button class="secondary icon-button" type="submit">Delete</button>
+              </form>
+            </div>
           </div>
           {% endfor %}
         </div>
@@ -720,6 +808,7 @@ ADMIN_TEMPLATE = """
 @click.option("--location-name", default=DEFAULT_LOCATION_NAME, show_default=True)
 @click.option("--latitude", default=DEFAULT_LATITUDE, show_default=True, type=float)
 @click.option("--longitude", default=DEFAULT_LONGITUDE, show_default=True, type=float)
+@click.option("--frame-orientation", type=click.Choice(["horizontal", "vertical"]), default="horizontal", show_default=True)
 @click.option("--mode", type=click.Choice(["all", "web", "display"]), default="all", show_default=True)
 def main(
     path: str,
@@ -731,6 +820,7 @@ def main(
     location_name: str,
     latitude: float,
     longitude: float,
+    frame_orientation: str,
     mode: str,
 ) -> None:
     photo_dir = Path(path)
@@ -743,6 +833,7 @@ def main(
         location_name=location_name,
         latitude=latitude,
         longitude=longitude,
+        frame_orientation=frame_orientation,
     )
     config_store = ConfigStore(Path(config_path).expanduser(), defaults)
     config_store.load()
