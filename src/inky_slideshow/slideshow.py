@@ -341,23 +341,31 @@ def render_weather_screen_pillow(
 
     date_font = _font(32, "Black")
     loc_font = _font(24, "Regular")
-    time_font = _font(110, "Bold")
+    time_size = 110 if not is_vertical else 90
+    time_font = _font(time_size, "Bold")
     cities_font = _font(16, "Medium")
 
     draw.text((40, 48), now.strftime("%A, %-d %b").upper(), font=date_font, fill="white", anchor="lt")
     draw.text((40, 88), config.location_name, font=loc_font, fill="white", anchor="lt")
 
-    icon_x = rx // 2 if not is_vertical else width // 2
-    icon_y = height - 160 if not is_vertical else ry - 160
+    if not is_vertical:
+        time_y = 120
+        icon_x = rx // 2
+        icon_y = height - 130
+        icon_size = 160
+    else:
+        time_y = 130
+        icon_x = width - 80
+        icon_y = ry // 2 + 10
+        icon_size = 120
 
-    weather_code = snapshot.weather_code if snapshot else 0
-    _draw_weather_icon(draw, icon_x, icon_y, weather_code)
-
-    time_y = 130 if not is_vertical else 130
     draw.text((40, time_y), london_now.strftime("%H:%M"), font=time_font, fill="white", anchor="lt")
 
+    weather_code = snapshot.weather_code if snapshot else 0
+    _draw_weather_icon(draw, icon_x, icon_y, weather_code, icon_size)
+
     bottom_y = height - 48 if not is_vertical else ry - 48
-    draw.text((40, bottom_y), f"LONDON  |  KOLKATA {kolkata_now.strftime('%H:%M')}", font=cities_font, fill="white", anchor="ls")
+    draw.text((40, bottom_y), f"KOLKATA {kolkata_now.strftime('%H:%M')}", font=cities_font, fill="white", anchor="ls")
 
     temp_font = _font(140, "Black")
     feels_font = _font(24, "Medium")
@@ -409,51 +417,37 @@ def _font(size: int, weight: str = "Regular") -> ImageFont.FreeTypeFont | ImageF
         return ImageFont.truetype(str(font_path), size)
     return ImageFont.load_default()
 
-def _draw_weather_icon(draw: ImageDraw.ImageDraw, cx: int, cy: int, code: int | None) -> None:
+def _draw_weather_icon(draw: ImageDraw.ImageDraw, cx: int, cy: int, code: int | None, icon_size: int = 160) -> None:
     if code is None:
         code = 0
-    import math
-
-    def draw_sun(x: int, y: int, radius: int = 40, rays: bool = True) -> None:
-        draw.ellipse((x - radius - 20, y - radius - 20, x + radius + 20, y + radius + 20), outline="#fbbf24", width=2)
-        draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill="#fbbf24")
-
-    def draw_cloud(x: int, y: int, fill: str = "white", outline: str = "white") -> None:
-        circles = [
-            (x - 35, y - 10, x + 35, y + 30),
-            (x - 60, y + 5, x - 15, y + 35),
-            (x + 15, y + 5, x + 60, y + 35),
-            (x - 25, y - 25, x + 25, y + 15),
-        ]
-        for bb in circles:
-            draw.ellipse(bb, fill=fill, outline=outline, width=3)
-        for (bx1, by1, bx2, by2) in circles:
-            draw.ellipse((bx1+3, by1+3, bx2-3, by2-3), fill=fill)
-
     if code == 0:
-        draw_sun(cx, cy, radius=50)
+        char = "\uf00d"
     elif code in (1, 2):
-        draw_sun(cx + 30, cy - 20, radius=35)
-        draw_cloud(cx - 10, cy + 10)
+        char = "\uf002"
     elif code == 3:
-        draw_cloud(cx, cy)
-    elif code in (45, 48): # Fog
-        draw_cloud(cx, cy - 20)
-        for i in range(3):
-            draw.line((cx - 40, cy + 25 + i*10, cx + 40, cy + 25 + i*10), fill="white", width=4)
-    elif code in range(51, 68) or code in range(80, 83): # Rain
-        draw_cloud(cx, cy - 15)
-        for i in range(-2, 3):
-            draw.line((cx + i*15, cy + 25, cx + i*15 - 10, cy + 45), fill="white", width=3)
-    elif code in range(71, 78) or code in range(85, 87): # Snow
-        draw_cloud(cx, cy - 15)
-        for i in range(-2, 3):
-            draw.ellipse((cx + i*15 - 3, cy + 30 - 3 + (i%2)*10, cx + i*15 + 3, cy + 30 + 3 + (i%2)*10), fill="white")
-    elif code >= 95: # Thunderstorm
-        draw_cloud(cx, cy - 15)
-        draw.polygon([(cx + 5, cy + 15), (cx - 15, cy + 35), (cx, cy + 35), (cx - 10, cy + 60), (cx + 20, cy + 30), (cx + 5, cy + 30)], fill="#fbbf24")
+        char = "\uf013"
+    elif code in (45, 48):
+        char = "\uf014"
+    elif code in range(51, 56) or code in range(56, 60):
+        char = "\uf01c"
+    elif code in range(61, 68):
+        char = "\uf019"
+    elif code in range(71, 78) or code in range(85, 87):
+        char = "\uf01b"
+    elif code in range(80, 83):
+        char = "\uf01a"
+    elif code >= 95:
+        char = "\uf01e"
     else:
-        draw_sun(cx, cy, radius=50)
+        char = "\uf00d"
+
+    font_path = Path(__file__).parent / "assets" / "fonts" / "weathericons.ttf"
+    if font_path.exists():
+        icon_font = ImageFont.truetype(str(font_path), icon_size)
+        draw.text((cx, cy), char, font=icon_font, fill="#fbbf24", anchor="mm")
+    else:
+        # Fallback
+        draw.ellipse((cx - 40, cy - 40, cx + 40, cy + 40), fill="#fbbf24")
 
 
 def _draw_metric(
