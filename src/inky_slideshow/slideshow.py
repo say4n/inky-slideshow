@@ -570,17 +570,30 @@ def _float_value(value: str | None, fallback: float) -> float:
         return fallback
 
 
-def run_web_server(photo_dir: Path, config_store: ConfigStore) -> threading.Thread:
+def run_web_server(photo_dir: Path, config_store: ConfigStore) -> None:
     config = config_store.load()
     app = create_app(photo_dir, config_store)
+    logger.info("Admin UI listening on http://{}:{}", config.host, config.port)
+    app.run(host=config.host, port=config.port, threaded=True, use_reloader=False)
+
+
+def start_display_worker(photo_dir: Path, config_store: ConfigStore) -> threading.Thread:
     thread = threading.Thread(
-        target=lambda: app.run(host=config.host, port=config.port, threaded=True, use_reloader=False),
-        name="inky-admin-web",
+        target=lambda: run_display_worker(photo_dir, config_store),
+        name="inky-display",
         daemon=True,
     )
     thread.start()
-    logger.info("Admin UI listening on http://{}:{}", config.host, config.port)
     return thread
+
+
+def run_display_worker(photo_dir: Path, config_store: ConfigStore) -> None:
+    while True:
+        try:
+            run_display_loop(photo_dir, config_store)
+        except Exception:
+            logger.exception("Display loop failed; retrying in 30 seconds")
+            time.sleep(30)
 
 
 def run_display_loop(photo_dir: Path, config_store: ConfigStore) -> None:
@@ -697,6 +710,7 @@ ADMIN_TEMPLATE = """
 @click.option("--location-name", default=DEFAULT_LOCATION_NAME, show_default=True)
 @click.option("--latitude", default=DEFAULT_LATITUDE, show_default=True, type=float)
 @click.option("--longitude", default=DEFAULT_LONGITUDE, show_default=True, type=float)
+@click.option("--mode", type=click.Choice(["all", "web", "display"]), default="all", show_default=True)
 def main(
     path: str,
     config_path: str,
@@ -707,6 +721,7 @@ def main(
     location_name: str,
     latitude: float,
     longitude: float,
+    mode: str,
 ) -> None:
     photo_dir = Path(path)
     photo_dir.mkdir(parents=True, exist_ok=True)
@@ -721,8 +736,13 @@ def main(
     )
     config_store = ConfigStore(Path(config_path).expanduser(), defaults)
     config_store.load()
-    run_web_server(photo_dir, config_store)
-    run_display_loop(photo_dir, config_store)
+    if mode == "web":
+        run_web_server(photo_dir, config_store)
+    elif mode == "display":
+        run_display_loop(photo_dir, config_store)
+    else:
+        start_display_worker(photo_dir, config_store)
+        run_web_server(photo_dir, config_store)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,15 @@
+ [Unit]
+ Description=Inky Slideshow Web Admin
+ After=network-online.target
+ Wants=network-online.target
+
+ [Service]
+ Type=simple
+ User=sayan
+ WorkingDirectory=/home/sayan/inky-slideshow/
+ ExecStart=/home/sayan/inky-slideshow/.venv/bin/python /home/sayan/inky-slideshow/src/inky_slideshow/slideshow.py /home/sayan/images --mode web --config /home/sayan/.config/inky-slideshow/config.json --photo-seconds 60 --weather-seconds 30 --host 0.0.0.0 --port 8080
+ Restart=always
+ RestartSec=10
+
+ [Install]
+ WantedBy=multi-user.target

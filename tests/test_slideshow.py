@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import pytest
 from PIL import Image
 
+import inky_slideshow.slideshow as slideshow
 from inky_slideshow.slideshow import (
     AppConfig,
     ConfigStore,
@@ -146,3 +147,25 @@ def test_flask_routes_update_upload_and_delete(tmp_path):
     response = client.post("/photos/test.jpg/delete")
     assert response.status_code == 302
     assert not (photo_dir / "test.jpg").exists()
+
+
+def test_display_worker_retries_after_failure(monkeypatch, tmp_path):
+    calls = {"display": 0, "sleep": 0}
+
+    def fake_display_loop(photo_dir, config_store):
+        calls["display"] += 1
+        if calls["display"] == 1:
+            raise RuntimeError("display failed")
+        raise KeyboardInterrupt
+
+    def fake_sleep(seconds):
+        calls["sleep"] += 1
+        assert seconds == 30
+
+    monkeypatch.setattr(slideshow, "run_display_loop", fake_display_loop)
+    monkeypatch.setattr(slideshow.time, "sleep", fake_sleep)
+
+    with pytest.raises(KeyboardInterrupt):
+        slideshow.run_display_worker(tmp_path, ConfigStore(tmp_path / "config.json", AppConfig()))
+
+    assert calls == {"display": 2, "sleep": 1}

@@ -19,7 +19,7 @@ pip install git+ssh://git@github.com/say4n/inky-slideshow
 
 On the frame, the intended setup path is the installer script. It clones or
 updates the repo, creates a local virtualenv, installs the package, writes the
-systemd unit, enables it, and starts the service.
+systemd units, enables them, and starts the services.
 
 ```console
 curl -fsSL https://raw.githubusercontent.com/say4n/inky-slideshow/main/scripts/install.sh | bash
@@ -44,9 +44,9 @@ Supported installer variables include `INKY_INSTALL_DIR`, `INKY_PHOTO_DIR`,
 
 ## Usage
 
-The slideshow runs as one service. It alternates between photos and a generated
-weather screen, and exposes a small LAN admin page for settings and photo
-management.
+The slideshow runs as two systemd services: one for the display loop and one for
+the LAN admin page. This keeps settings and photo management available even if
+the display hardware path fails or restarts.
 
 ```console
 hatch run slideshow /home/sayan/images
@@ -64,8 +64,9 @@ hatch run slideshow /home/sayan/images --photo-seconds 60 --weather-seconds 30
 ```
 
 Settings are persisted to `~/.config/inky-slideshow/config.json` unless
-`--config` is provided. The installer writes and starts the systemd unit; the
-included `inky-slideshow.service` shows the generated unit shape.
+`--config` is provided. The installer writes and starts
+`inky-slideshow-web.service` and `inky-slideshow-display.service`; the included
+unit files show the generated unit shape.
 
 ## License
 

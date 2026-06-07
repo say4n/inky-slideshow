@@ -23,7 +23,11 @@ WEB_PORT="${INKY_WEB_PORT:-8080}"
 LOCATION_NAME="${INKY_LOCATION_NAME:-London}"
 LATITUDE="${INKY_LATITUDE:-51.5072}"
 LONGITUDE="${INKY_LONGITUDE:--0.1276}"
-UNIT_PATH="/etc/systemd/system/${SERVICE_NAME}.service"
+LEGACY_UNIT="${SERVICE_NAME}.service"
+WEB_UNIT="${SERVICE_NAME}-web.service"
+DISPLAY_UNIT="${SERVICE_NAME}-display.service"
+WEB_UNIT_PATH="/etc/systemd/system/${WEB_UNIT}"
+DISPLAY_UNIT_PATH="/etc/systemd/system/${DISPLAY_UNIT}"
 
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "This installer only supports Linux systemd hosts." >&2
@@ -132,10 +136,12 @@ run_as_service_user python3 -m venv "${INSTALL_DIR}/.venv"
 run_as_service_user "${INSTALL_DIR}/.venv/bin/python" -m pip install --upgrade pip wheel
 run_as_service_user "${INSTALL_DIR}/.venv/bin/python" -m pip install --upgrade "${INSTALL_DIR}"
 
-TMP_UNIT="$(mktemp)"
-cat >"${TMP_UNIT}" <<UNIT
+TMP_WEB_UNIT="$(mktemp)"
+TMP_DISPLAY_UNIT="$(mktemp)"
+
+cat >"${TMP_WEB_UNIT}" <<UNIT
 [Unit]
-Description=Inky Slideshow Service
+Description=Inky Slideshow Web Admin
 After=network-online.target
 Wants=network-online.target
 
@@ -143,7 +149,7 @@ Wants=network-online.target
 Type=simple
 User=${SERVICE_USER}
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=${INSTALL_DIR}/.venv/bin/python ${INSTALL_DIR}/src/inky_slideshow/slideshow.py "${PHOTO_DIR}" --config "${CONFIG_PATH}" --photo-seconds ${PHOTO_SECONDS} --weather-seconds ${WEATHER_SECONDS} --host ${WEB_HOST} --port ${WEB_PORT} --location-name "${LOCATION_NAME}" --latitude ${LATITUDE} --longitude ${LONGITUDE}
+ExecStart=${INSTALL_DIR}/.venv/bin/python ${INSTALL_DIR}/src/inky_slideshow/slideshow.py "${PHOTO_DIR}" --mode web --config "${CONFIG_PATH}" --photo-seconds ${PHOTO_SECONDS} --weather-seconds ${WEATHER_SECONDS} --host ${WEB_HOST} --port ${WEB_PORT} --location-name "${LOCATION_NAME}" --latitude ${LATITUDE} --longitude ${LONGITUDE}
 Restart=always
 RestartSec=10
 
@@ -151,23 +157,48 @@ RestartSec=10
 WantedBy=multi-user.target
 UNIT
 
-"${SUDO[@]}" install -m 0644 "${TMP_UNIT}" "${UNIT_PATH}"
-rm -f "${TMP_UNIT}"
+cat >"${TMP_DISPLAY_UNIT}" <<UNIT
+[Unit]
+Description=Inky Slideshow Display
+After=network-online.target ${WEB_UNIT}
+Wants=network-online.target ${WEB_UNIT}
+
+[Service]
+Type=simple
+User=${SERVICE_USER}
+WorkingDirectory=${INSTALL_DIR}
+ExecStart=${INSTALL_DIR}/.venv/bin/python ${INSTALL_DIR}/src/inky_slideshow/slideshow.py "${PHOTO_DIR}" --mode display --config "${CONFIG_PATH}" --photo-seconds ${PHOTO_SECONDS} --weather-seconds ${WEATHER_SECONDS} --host ${WEB_HOST} --port ${WEB_PORT} --location-name "${LOCATION_NAME}" --latitude ${LATITUDE} --longitude ${LONGITUDE}
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+"${SUDO[@]}" install -m 0644 "${TMP_WEB_UNIT}" "${WEB_UNIT_PATH}"
+"${SUDO[@]}" install -m 0644 "${TMP_DISPLAY_UNIT}" "${DISPLAY_UNIT_PATH}"
+rm -f "${TMP_WEB_UNIT}" "${TMP_DISPLAY_UNIT}"
+
+"${SUDO[@]}" systemctl stop "${LEGACY_UNIT}" 2>/dev/null || true
+"${SUDO[@]}" systemctl disable "${LEGACY_UNIT}" 2>/dev/null || true
+"${SUDO[@]}" rm -f "/etc/systemd/system/${LEGACY_UNIT}"
 
 "${SUDO[@]}" systemctl daemon-reload
-"${SUDO[@]}" systemctl enable "${SERVICE_NAME}.service"
-"${SUDO[@]}" systemctl restart "${SERVICE_NAME}.service"
+"${SUDO[@]}" systemctl enable "${WEB_UNIT}" "${DISPLAY_UNIT}"
+"${SUDO[@]}" systemctl restart "${WEB_UNIT}" "${DISPLAY_UNIT}"
 
 cat <<EOF
 Installed ${SERVICE_NAME}.
 
-Service:     ${SERVICE_NAME}.service
+Services:    ${WEB_UNIT}
+             ${DISPLAY_UNIT}
 Install dir: ${INSTALL_DIR}
 Photo dir:   ${PHOTO_DIR}
 Config:      ${CONFIG_PATH}
 Admin UI:    http://<frame-host>:${WEB_PORT}
 
 Useful commands:
-  sudo systemctl status ${SERVICE_NAME}.service
-  sudo journalctl -u ${SERVICE_NAME}.service -f
+  sudo systemctl status ${WEB_UNIT} ${DISPLAY_UNIT}
+  sudo journalctl -u ${WEB_UNIT} -f
+  sudo journalctl -u ${DISPLAY_UNIT} -f
 EOF
