@@ -914,7 +914,7 @@ def main(
     if mode == "display":
         run_display_loop(photo_dir, config_store, photo_lock)
     else:
-        from .admin import WeatherCache, run_admin_server
+        from inky_slideshow.admin import WeatherCache, run_admin_server
 
         weather_cache = WeatherCache()
         if mode == "combined":
