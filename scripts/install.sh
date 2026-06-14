@@ -6,6 +6,7 @@ REPO_REF="${INKY_REPO_REF:-main}"
 SERVICE_NAME="${INKY_SERVICE_NAME:-inky-slideshow}"
 SERVICE_USER="${INKY_SERVICE_USER:-${SUDO_USER:-$(id -un)}}"
 SERVICE_HOME="$(getent passwd "${SERVICE_USER}" | cut -d: -f6)"
+SERVICE_GROUP="$(id -gn "${SERVICE_USER}")"
 INSTALLER_REEXEC="${INKY_INSTALLER_REEXEC:-0}"
 
 if [[ -z "${SERVICE_HOME}" ]]; then
@@ -115,7 +116,9 @@ PY
   exit 1
 }
 
-install_os_packages
+if [[ "${INSTALLER_REEXEC}" != "1" ]]; then
+  install_os_packages
+fi
 
 configure_hardware_access() {
   for group in spi gpio i2c; do
@@ -138,7 +141,9 @@ configure_hardware_access() {
   fi
 }
 
-configure_hardware_access
+if [[ "${INSTALLER_REEXEC}" != "1" ]]; then
+  configure_hardware_access
+fi
 
 run_as_service_user mkdir -p "${INSTALL_DIR}" "${PHOTO_DIR}" "$(dirname "${CONFIG_PATH}")"
 
@@ -155,6 +160,8 @@ if [[ "${INSTALLER_REEXEC}" != "1" ]]; then
   export INKY_INSTALLER_REEXEC=1
   exec bash "${INSTALL_DIR}/scripts/install.sh"
 fi
+
+"${SUDO[@]}" chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${INSTALL_DIR}" "${PHOTO_DIR}" "$(dirname "${CONFIG_PATH}")"
 
 run_as_service_user python3 -m venv "${INSTALL_DIR}/.venv"
 run_as_service_user "${INSTALL_DIR}/.venv/bin/python" -m pip install --upgrade pip wheel
