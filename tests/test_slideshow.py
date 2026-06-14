@@ -1,11 +1,15 @@
 import sys
 import types
+from io import BytesIO
 from datetime import datetime, timezone
 
 import pytest
+from click.testing import CliRunner
 from PIL import Image
 
 from inky_slideshow import slideshow
+from inky_slideshow import admin
+from inky_slideshow.admin import create_app
 from inky_slideshow.slideshow import (
     AppConfig,
     ConfigStore,
@@ -167,7 +171,7 @@ def test_rotate_photo_updates_image_dimensions(tmp_path):
 def test_display_worker_retries_after_failure(monkeypatch, tmp_path):
     calls = {"display": 0, "sleep": 0}
 
-    def fake_display_loop(photo_dir, config_store):
+    def fake_display_loop(photo_dir, config_store, photo_lock=None, weather_cache=None):
         calls["display"] += 1
         if calls["display"] == 1:
             raise RuntimeError("display failed")
@@ -236,3 +240,177 @@ def test_display_loop_shows_weather_after_each_photo(monkeypatch, tmp_path):
     assert events[0] is photo_image
     assert events[1] is weather_image
     assert sleeps == [7, 3]
+
+
+def test_admin_settings_updates_config(tmp_path):
+    store = ConfigStore(tmp_path / "config.json", AppConfig(photo_seconds=7, weather_seconds=3))
+    app = create_app(tmp_path, store)
+
+    response = app.test_client().post(
+        "/settings",
+        data={
+            "photo_seconds": "22",
+            "weather_seconds": "11",
+            "location_name": "Paris",
+            "latitude": "48.8566",
+            "longitude": "2.3522",
+            "frame_orientation": "vertical",
+        },
+    )
+
+    assert response.status_code == 302
+    loaded = store.load()
+    assert loaded.photo_seconds == 22
+    assert loaded.weather_seconds == 11
+    assert loaded.location_name == "Paris"
+    assert loaded.latitude == 48.8566
+    assert loaded.longitude == 2.3522
+    assert loaded.frame_orientation == "vertical"
+
+
+def test_admin_upload_rejects_unsafe_and_oversized_files(tmp_path):
+    store = ConfigStore(tmp_path / "config.json", AppConfig())
+    client = create_app(tmp_path, store).test_client()
+
+    unsafe = client.post(
+        "/photos",
+        data={"photo": (BytesIO(b"abc"), "../bad.jpg")},
+        content_type="multipart/form-data",
+    )
+    oversized = create_app(tmp_path, store, upload_limit=8).test_client().post(
+        "/photos",
+        data={"photo": (BytesIO(b"0123456789" * 4), "big.jpg")},
+        content_type="multipart/form-data",
+    )
+
+    assert unsafe.status_code == 400
+    assert oversized.status_code == 413
+
+
+def test_admin_upload_validates_and_saves_photo(monkeypatch, tmp_path):
+    calls = []
+    store = ConfigStore(tmp_path / "config.json", AppConfig())
+    app = create_app(tmp_path, store)
+    image_bytes = BytesIO()
+    Image.new("RGB", (4, 4), "white").save(image_bytes, format="PNG")
+    image_bytes.seek(0)
+
+    def fake_validate(path):
+        calls.append(path)
+
+    monkeypatch.setattr(admin, "validate_image", fake_validate)
+
+    response = app.test_client().post(
+        "/photos",
+        data={"photo": (image_bytes, "photo.png")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 302
+    assert (tmp_path / "photo.png").exists()
+    assert calls
+
+
+def test_admin_rotate_and_delete_photo(monkeypatch, tmp_path):
+    photo = tmp_path / "photo.jpg"
+    photo.write_bytes(b"image")
+    store = ConfigStore(tmp_path / "config.json", AppConfig())
+    app = create_app(tmp_path, store)
+    rotations = []
+
+    def fake_rotate(path, degrees):
+        rotations.append((path, degrees))
+
+    monkeypatch.setattr(admin, "rotate_photo", fake_rotate)
+    client = app.test_client()
+
+    rotate_response = client.post("/photos/photo.jpg/rotate", data={"direction": "left"})
+    delete_response = client.post("/photos/photo.jpg/delete")
+
+    assert rotate_response.status_code == 302
+    assert rotations == [(photo.resolve(), 90)]
+    assert delete_response.status_code == 302
+    assert not photo.exists()
+
+
+def test_admin_weather_preview_uses_cache(monkeypatch, tmp_path):
+    store = ConfigStore(tmp_path / "config.json", AppConfig())
+    rendered = Image.new("RGB", (8, 8), "white")
+    calls = {"cache": 0}
+
+    class FakeCache:
+        def get(self, config):
+            calls["cache"] += 1
+            return None
+
+    monkeypatch.setattr(admin, "render_weather_screen", lambda resolution, config, snapshot: rendered)
+    app = create_app(tmp_path, store, weather_cache=FakeCache())
+
+    response = app.test_client().get("/weather-screen")
+
+    assert response.status_code == 200
+    assert response.mimetype == "image/png"
+    assert calls["cache"] == 1
+
+
+def test_weather_cache_reuses_fresh_snapshot(monkeypatch):
+    snapshots = [
+        WeatherSnapshot(
+            fetched_at="now",
+            location_name="London",
+            temperature_c=1,
+            feels_like_c=1,
+            weather_code=0,
+            wind_mph=1,
+            humidity_percent=1,
+            uv_index=1,
+            air_quality_index=1,
+            today_low_c=1,
+            today_high_c=1,
+            tomorrow_low_c=1,
+            tomorrow_high_c=1,
+            tomorrow_weather_code=0,
+            sunrise=None,
+            sunset=None,
+            hourly=[],
+        )
+    ]
+    cache = admin.WeatherCache(ttl_seconds=60)
+    calls = []
+
+    def fake_fetch(self, config):
+        calls.append(config)
+        return snapshots[0]
+
+    monkeypatch.setattr(admin.WeatherClient, "fetch_or_cached", fake_fetch)
+
+    assert cache.get(AppConfig()) is snapshots[0]
+    assert cache.get(AppConfig()) is snapshots[0]
+    assert len(calls) == 1
+
+
+def test_cli_modes_branch_to_display_admin_or_combined(monkeypatch, tmp_path):
+    events = []
+
+    def fake_display_loop(photo_dir, config_store, photo_lock=None, weather_cache=None):
+        events.append(("display", photo_dir))
+
+    def fake_start_display_worker(photo_dir, config_store, photo_lock=None, weather_cache=None):
+        events.append(("worker", photo_dir))
+
+    def fake_run_admin_server(photo_dir, config_store, photo_lock=None, weather_cache=None):
+        events.append(("admin", photo_dir))
+
+    monkeypatch.setattr(slideshow, "run_display_loop", fake_display_loop)
+    monkeypatch.setattr(slideshow, "start_display_worker", fake_start_display_worker)
+    monkeypatch.setattr(admin, "run_admin_server", fake_run_admin_server)
+    runner = CliRunner()
+
+    display = runner.invoke(slideshow.main, [str(tmp_path), "--config", str(tmp_path / "display.json"), "--mode", "display"])
+    admin_only = runner.invoke(slideshow.main, [str(tmp_path), "--config", str(tmp_path / "admin.json"), "--mode", "admin"])
+    combined = runner.invoke(slideshow.main, [str(tmp_path), "--config", str(tmp_path / "combined.json"), "--mode", "combined"])
+
+    assert display.exit_code == 0
+    assert admin_only.exit_code == 0
+    assert combined.exit_code == 0
+    assert [event[0] for event in events] == ["display", "admin", "worker", "admin"]

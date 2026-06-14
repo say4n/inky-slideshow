@@ -18,9 +18,8 @@ pip install git+ssh://git@github.com/say4n/inky-slideshow
 ```
 
 On the frame, the intended setup path is the installer script. It clones or
-updates the repo, installs Node dependencies for the admin app, creates a local
-Python virtualenv for the display service, writes the systemd units, enables
-them, and starts the services.
+updates the repo, creates a local Python virtualenv for the display and admin
+service, writes the systemd unit, enables it, and starts the service.
 
 ```console
 curl -fsSL https://raw.githubusercontent.com/say4n/inky-slideshow/main/scripts/install.sh | bash
@@ -46,9 +45,9 @@ Supported installer variables include `INKY_INSTALL_DIR`, `INKY_PHOTO_DIR`,
 
 ## Usage
 
-The slideshow runs as two systemd services: a Python display loop for the Inky
-hardware and a Node.js LAN admin app. This keeps settings and photo management
-available even if the display hardware path fails or restarts.
+The slideshow runs as one Python systemd service. The Inky display loop runs in
+a worker thread, while the Flask LAN admin app remains available for settings
+and photo management even if the display hardware path fails or restarts.
 
 ```console
 hatch run slideshow /home/sayan/images
@@ -68,8 +67,7 @@ hatch run slideshow /home/sayan/images --photo-seconds 60 --weather-seconds 30
 
 Settings are persisted to `~/.config/inky-slideshow/config.json` unless
 `--config` is provided. The installer writes and starts
-`inky-slideshow-web.service` and `inky-slideshow-display.service`; the included
-unit files show the generated unit shape.
+`inky-slideshow.service`; the included unit file shows the generated unit shape.
 
 ## License
 

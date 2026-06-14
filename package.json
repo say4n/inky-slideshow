@@ -4,12 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "admin:start": "node admin/server.js",
     "admin:build": "tailwindcss -i admin/src/input.css -o admin/public/admin.css --minify"
-  },
-  "dependencies": {
-    "express": "^4.19.2",
-    "multer": "^2.0.2"
   },
   "devDependencies": {
     "tailwindcss": "^3.4.17"

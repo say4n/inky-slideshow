@@ -790,9 +790,14 @@ def _admin_url_label(config: AppConfig) -> str:
     return f"{config.host}:{config.port}"
 
 
-def start_display_worker(photo_dir: Path, config_store: ConfigStore) -> threading.Thread:
+def start_display_worker(
+    photo_dir: Path,
+    config_store: ConfigStore,
+    photo_lock: threading.RLock | None = None,
+    weather_cache: Any | None = None,
+) -> threading.Thread:
     thread = threading.Thread(
-        target=lambda: run_display_worker(photo_dir, config_store),
+        target=lambda: run_display_worker(photo_dir, config_store, photo_lock, weather_cache),
         name="inky-display",
         daemon=True,
     )
@@ -800,18 +805,29 @@ def start_display_worker(photo_dir: Path, config_store: ConfigStore) -> threadin
     return thread
 
 
-def run_display_worker(photo_dir: Path, config_store: ConfigStore) -> None:
+def run_display_worker(
+    photo_dir: Path,
+    config_store: ConfigStore,
+    photo_lock: threading.RLock | None = None,
+    weather_cache: Any | None = None,
+) -> None:
     while True:
         try:
-            run_display_loop(photo_dir, config_store)
+            run_display_loop(photo_dir, config_store, photo_lock, weather_cache)
         except Exception:
             logger.exception("Display loop failed; retrying in 30 seconds")
             time.sleep(30)
 
 
-def run_display_loop(photo_dir: Path, config_store: ConfigStore) -> None:
+def run_display_loop(
+    photo_dir: Path,
+    config_store: ConfigStore,
+    photo_lock: threading.RLock | None = None,
+    weather_cache: Any | None = None,
+) -> None:
     from inky.auto import auto
 
+    lock = photo_lock or threading.RLock()
     inky_display = auto(ask_user=True)
     inky_display.set_border(inky_display.WHITE)
     weather_client = WeatherClient()
@@ -825,7 +841,8 @@ def run_display_loop(photo_dir: Path, config_store: ConfigStore) -> None:
             current_image = photos[index % len(photos)]
             logger.info("Displaying photo: {}", current_image)
             try:
-                image = fit_photo(current_image, target_resolution)
+                with lock:
+                    image = fit_photo(current_image, target_resolution)
             except (OSError, UnidentifiedImageError):
                 logger.exception("Skipping unreadable photo: {}", current_image)
             else:
@@ -843,7 +860,7 @@ def run_display_loop(photo_dir: Path, config_store: ConfigStore) -> None:
         config = config_store.load()
         target_resolution = oriented_resolution(inky_display.resolution, config.frame_orientation)
         logger.info("Displaying weather screen")
-        snapshot = weather_client.fetch_or_cached(config)
+        snapshot = weather_cache.get(config) if weather_cache is not None else weather_client.fetch_or_cached(config)
         weather_image = render_weather_screen(target_resolution, config, snapshot)
         inky_display.set_image(image_for_display(weather_image, inky_display.resolution))
         try:
@@ -865,7 +882,7 @@ def run_display_loop(photo_dir: Path, config_store: ConfigStore) -> None:
 @click.option("--latitude", default=DEFAULT_LATITUDE, show_default=True, type=float)
 @click.option("--longitude", default=DEFAULT_LONGITUDE, show_default=True, type=float)
 @click.option("--frame-orientation", type=click.Choice(["horizontal", "vertical"]), default="horizontal", show_default=True)
-@click.option("--mode", type=click.Choice(["display"]), default="display", show_default=True)
+@click.option("--mode", type=click.Choice(["combined", "display", "admin"]), default="combined", show_default=True)
 def main(
     path: str,
     config_path: str,
@@ -893,7 +910,16 @@ def main(
     )
     config_store = ConfigStore(Path(config_path).expanduser(), defaults)
     config_store.load()
-    run_display_loop(photo_dir, config_store)
+    photo_lock = threading.RLock()
+    if mode == "display":
+        run_display_loop(photo_dir, config_store, photo_lock)
+    else:
+        from .admin import WeatherCache, run_admin_server
+
+        weather_cache = WeatherCache()
+        if mode == "combined":
+            start_display_worker(photo_dir, config_store, photo_lock, weather_cache)
+        run_admin_server(photo_dir, config_store, photo_lock, weather_cache)
 
 
 if __name__ == "__main__":

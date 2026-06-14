@@ -24,11 +24,10 @@ LOCATION_NAME="${INKY_LOCATION_NAME:-London}"
 LATITUDE="${INKY_LATITUDE:-51.5072}"
 LONGITUDE="${INKY_LONGITUDE:--0.1276}"
 FRAME_ORIENTATION="${INKY_FRAME_ORIENTATION:-horizontal}"
-LEGACY_UNIT="${SERVICE_NAME}.service"
+UNIT="${SERVICE_NAME}.service"
 WEB_UNIT="${SERVICE_NAME}-web.service"
 DISPLAY_UNIT="${SERVICE_NAME}-display.service"
-WEB_UNIT_PATH="/etc/systemd/system/${WEB_UNIT}"
-DISPLAY_UNIT_PATH="/etc/systemd/system/${DISPLAY_UNIT}"
+UNIT_PATH="/etc/systemd/system/${UNIT}"
 REBOOT_REQUIRED=0
 
 if [[ "$(uname -s)" != "Linux" ]]; then
@@ -71,8 +70,6 @@ install_os_packages() {
   local missing=()
   local python_dev_package="python3-dev"
   command -v git >/dev/null 2>&1 || missing+=(git)
-  command -v node >/dev/null 2>&1 || missing+=(nodejs)
-  command -v npm >/dev/null 2>&1 || missing+=(npm)
   command -v python3 >/dev/null 2>&1 || missing+=(python3)
   python3 -m venv --help >/dev/null 2>&1 || missing+=(python3-venv)
 
@@ -89,8 +86,6 @@ PY
     local apt_packages=(
       build-essential
       git
-      nodejs
-      npm
       python3
       python3-dev
       python3-pip
@@ -116,7 +111,7 @@ PY
   fi
 
   echo "Missing required install prerequisites." >&2
-  echo "Install git, nodejs, npm, python3, python3-venv, python3-pip, python3-dev, and build-essential, then rerun this installer." >&2
+  echo "Install git, python3, python3-venv, python3-pip, python3-dev, and build-essential, then rerun this installer." >&2
   exit 1
 }
 
@@ -164,15 +159,13 @@ fi
 run_as_service_user python3 -m venv "${INSTALL_DIR}/.venv"
 run_as_service_user "${INSTALL_DIR}/.venv/bin/python" -m pip install --upgrade pip wheel
 run_as_service_user "${INSTALL_DIR}/.venv/bin/python" -m pip install --upgrade "${INSTALL_DIR}"
-run_as_service_user npm --prefix "${INSTALL_DIR}" ci --omit=dev
 
 
-TMP_WEB_UNIT="$(mktemp)"
-TMP_DISPLAY_UNIT="$(mktemp)"
+TMP_UNIT="$(mktemp)"
 
-cat >"${TMP_WEB_UNIT}" <<UNIT
+cat >"${TMP_UNIT}" <<UNIT
 [Unit]
-Description=Inky Slideshow Web Admin
+Description=Inky Slideshow
 After=network-online.target
 Wants=network-online.target
 
@@ -180,7 +173,7 @@ Wants=network-online.target
 Type=simple
 User=${SERVICE_USER}
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=/usr/bin/env node ${INSTALL_DIR}/admin/server.js --photo-dir "${PHOTO_DIR}" --config "${CONFIG_PATH}" --host ${WEB_HOST} --port ${WEB_PORT} --python ${INSTALL_DIR}/.venv/bin/python --photo-seconds ${PHOTO_SECONDS} --weather-seconds ${WEATHER_SECONDS} --location-name "${LOCATION_NAME}" --latitude ${LATITUDE} --longitude ${LONGITUDE} --frame-orientation ${FRAME_ORIENTATION}
+ExecStart=${INSTALL_DIR}/.venv/bin/python ${INSTALL_DIR}/src/inky_slideshow/slideshow.py "${PHOTO_DIR}" --mode combined --config "${CONFIG_PATH}" --photo-seconds ${PHOTO_SECONDS} --weather-seconds ${WEATHER_SECONDS} --host ${WEB_HOST} --port ${WEB_PORT} --location-name "${LOCATION_NAME}" --latitude ${LATITUDE} --longitude ${LONGITUDE} --frame-orientation ${FRAME_ORIENTATION}
 Restart=always
 RestartSec=10
 
@@ -188,50 +181,29 @@ RestartSec=10
 WantedBy=multi-user.target
 UNIT
 
-cat >"${TMP_DISPLAY_UNIT}" <<UNIT
-[Unit]
-Description=Inky Slideshow Display
-After=network-online.target ${WEB_UNIT}
-Wants=network-online.target ${WEB_UNIT}
+"${SUDO[@]}" install -m 0644 "${TMP_UNIT}" "${UNIT_PATH}"
+rm -f "${TMP_UNIT}"
 
-[Service]
-Type=simple
-User=${SERVICE_USER}
-WorkingDirectory=${INSTALL_DIR}
-ExecStart=${INSTALL_DIR}/.venv/bin/python ${INSTALL_DIR}/src/inky_slideshow/slideshow.py "${PHOTO_DIR}" --mode display --config "${CONFIG_PATH}" --photo-seconds ${PHOTO_SECONDS} --weather-seconds ${WEATHER_SECONDS} --host ${WEB_HOST} --port ${WEB_PORT} --location-name "${LOCATION_NAME}" --latitude ${LATITUDE} --longitude ${LONGITUDE} --frame-orientation ${FRAME_ORIENTATION}
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-UNIT
-
-"${SUDO[@]}" install -m 0644 "${TMP_WEB_UNIT}" "${WEB_UNIT_PATH}"
-"${SUDO[@]}" install -m 0644 "${TMP_DISPLAY_UNIT}" "${DISPLAY_UNIT_PATH}"
-rm -f "${TMP_WEB_UNIT}" "${TMP_DISPLAY_UNIT}"
-
-"${SUDO[@]}" systemctl stop "${LEGACY_UNIT}" 2>/dev/null || true
-"${SUDO[@]}" systemctl disable "${LEGACY_UNIT}" 2>/dev/null || true
-"${SUDO[@]}" rm -f "/etc/systemd/system/${LEGACY_UNIT}"
+"${SUDO[@]}" systemctl stop "${WEB_UNIT}" "${DISPLAY_UNIT}" 2>/dev/null || true
+"${SUDO[@]}" systemctl disable "${WEB_UNIT}" "${DISPLAY_UNIT}" 2>/dev/null || true
+"${SUDO[@]}" rm -f "/etc/systemd/system/${WEB_UNIT}" "/etc/systemd/system/${DISPLAY_UNIT}"
 
 "${SUDO[@]}" systemctl daemon-reload
-"${SUDO[@]}" systemctl enable "${WEB_UNIT}" "${DISPLAY_UNIT}"
-"${SUDO[@]}" systemctl restart "${WEB_UNIT}" "${DISPLAY_UNIT}"
+"${SUDO[@]}" systemctl enable "${UNIT}"
+"${SUDO[@]}" systemctl restart "${UNIT}"
 
 cat <<EOF
 Installed ${SERVICE_NAME}.
 
-Services:    ${WEB_UNIT}
-             ${DISPLAY_UNIT}
+Service:     ${UNIT}
 Install dir: ${INSTALL_DIR}
 Photo dir:   ${PHOTO_DIR}
 Config:      ${CONFIG_PATH}
 Admin UI:    http://<frame-host>:${WEB_PORT}
 
 Useful commands:
-  sudo systemctl status ${WEB_UNIT} ${DISPLAY_UNIT}
-  sudo journalctl -u ${WEB_UNIT} -f
-  sudo journalctl -u ${DISPLAY_UNIT} -f
+  sudo systemctl status ${UNIT}
+  sudo journalctl -u ${UNIT} -f
 EOF
 
 if [[ "${REBOOT_REQUIRED}" == "1" ]]; then
