@@ -309,16 +309,10 @@ def image_upload(color: str, filename: str) -> tuple[BytesIO, str]:
     return image_bytes, filename
 
 
-def test_admin_upload_validates_and_saves_photo(monkeypatch, tmp_path):
-    calls = []
+def test_admin_upload_normalizes_and_saves_photo(tmp_path):
     store = ConfigStore(tmp_path / "config.json", AppConfig())
     app = create_app(tmp_path, store)
     image_bytes, filename = image_upload("white", "photo.png")
-
-    def fake_validate(path):
-        calls.append(path)
-
-    monkeypatch.setattr(admin, "validate_image", fake_validate)
 
     response = app.test_client().post(
         "/photos",
@@ -328,8 +322,28 @@ def test_admin_upload_validates_and_saves_photo(monkeypatch, tmp_path):
 
     assert response.status_code == 302
     assert response.location == "/?uploaded=1&failed=0"
-    assert (tmp_path / "photo.png").exists()
-    assert calls
+    assert not (tmp_path / "photo.png").exists()
+    with Image.open(tmp_path / "photo.jpg") as image:
+        assert image.format == "JPEG"
+        assert image.size == (4, 4)
+
+
+def test_admin_upload_resizes_large_photo_on_ingest(tmp_path):
+    store = ConfigStore(tmp_path / "config.json", AppConfig())
+    app = create_app(tmp_path, store)
+    image_bytes = BytesIO()
+    Image.new("RGB", (3200, 1800), "white").save(image_bytes, format="JPEG")
+    image_bytes.seek(0)
+
+    response = app.test_client().post(
+        "/photos",
+        data={"photo": (image_bytes, "large.jpeg")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 302
+    with Image.open(tmp_path / "large.jpg") as image:
+        assert image.size == (2400, 1350)
 
 
 def test_admin_upload_saves_multiple_photos(tmp_path):
@@ -349,8 +363,8 @@ def test_admin_upload_saves_multiple_photos(tmp_path):
 
     assert response.status_code == 302
     assert response.location == "/?uploaded=2&failed=0"
-    assert (tmp_path / "one.png").exists()
-    assert (tmp_path / "two.png").exists()
+    assert (tmp_path / "one.jpg").exists()
+    assert (tmp_path / "two.jpg").exists()
 
 
 def test_admin_upload_skips_invalid_files_in_batch(tmp_path):
@@ -372,7 +386,7 @@ def test_admin_upload_skips_invalid_files_in_batch(tmp_path):
 
     assert response.status_code == 200
     assert b"Uploaded 1 image; skipped 2 files." in response.data
-    assert (tmp_path / "valid.png").exists()
+    assert (tmp_path / "valid.jpg").exists()
     assert not (tmp_path / "broken.png").exists()
     assert not (tmp_path / "unsafe.png").exists()
 
@@ -439,7 +453,7 @@ def test_admin_thumbnail_route_creates_small_jpeg(tmp_path):
     thumbnails = list((tmp_path / ".thumbnails").glob("large.jpg.*.jpg"))
     assert len(thumbnails) == 1
     with Image.open(thumbnails[0]) as image:
-        assert image.size == (320, 320)
+        assert image.size == (240, 240)
 
 
 def test_admin_thumbnail_route_accepts_tilde_filenames(tmp_path):
@@ -469,9 +483,9 @@ def test_admin_thumbnail_honors_exif_orientation(tmp_path):
     assert response.status_code == 200
     thumbnail_path = next((tmp_path / ".thumbnails").glob("oriented.jpg.*.jpg"))
     with Image.open(thumbnail_path) as thumbnail:
-        assert thumbnail.size == (320, 320)
-        assert thumbnail.getpixel((170, 20))[0] < 80
-        assert thumbnail.getpixel((170, 300))[0] > 175
+        assert thumbnail.size == (240, 240)
+        assert thumbnail.getpixel((130, 15))[0] < 80
+        assert thumbnail.getpixel((130, 225))[0] > 175
 
 
 def test_admin_weather_preview_uses_cache(monkeypatch, tmp_path):

@@ -22,13 +22,13 @@ from .slideshow import (
     oriented_resolution,
     render_weather_screen,
     rotate_photo,
-    validate_image,
 )
 
 DEFAULT_UPLOAD_LIMIT = 256 * 1024 * 1024
+INGEST_MAX_EDGE = 2400
 WEATHER_CACHE_SECONDS = 15 * 60
 REPO_ROOT = Path(__file__).resolve().parents[2]
-THUMBNAIL_SIZE = (320, 320)
+THUMBNAIL_SIZE = (240, 240)
 
 
 class WeatherCache:
@@ -126,21 +126,25 @@ def create_app(
         failed = 0
         for uploaded in uploaded_files:
             try:
-                target = managed_photo_path(photo_dir, uploaded.filename)
+                target = uploaded_photo_target(photo_dir, uploaded.filename)
             except ValueError:
                 failed += 1
                 continue
 
-            temp_path = upload_dir / f"{time.monotonic_ns()}-{target.name}"
+            token = time.monotonic_ns()
+            upload_path = upload_dir / f"{token}-{uploaded.filename}"
+            processed_path = upload_dir / f"{token}-{target.name}"
             try:
-                uploaded.save(temp_path)
-                validate_image(temp_path)
+                uploaded.save(upload_path)
+                normalize_uploaded_photo(upload_path, processed_path)
                 with lock:
-                    temp_path.replace(target)
+                    processed_path.replace(target)
                 saved += 1
             except Exception:
-                temp_path.unlink(missing_ok=True)
                 failed += 1
+            finally:
+                upload_path.unlink(missing_ok=True)
+                processed_path.unlink(missing_ok=True)
 
         return redirect(f"/?uploaded={saved}&failed={failed}")
 
@@ -222,6 +226,18 @@ def non_negative_int(value: str | None) -> int | None:
     except ValueError:
         return None
     return parsed if parsed >= 0 else None
+
+
+def uploaded_photo_target(photo_dir: Path, filename: str) -> Path:
+    return managed_photo_path(photo_dir, filename).with_suffix(".jpg")
+
+
+def normalize_uploaded_photo(source: Path, target: Path, max_edge: int = INGEST_MAX_EDGE) -> None:
+    with Image.open(source) as image:
+        image.draft("RGB", (max_edge, max_edge))
+        image = ImageOps.exif_transpose(image)
+        image.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
+        image.convert("RGB").save(target, format="JPEG", quality=88, optimize=True, progressive=True)
 
 
 def float_value(value: str | None, fallback: float) -> float:
