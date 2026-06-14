@@ -25,7 +25,7 @@ from .slideshow import (
     validate_image,
 )
 
-DEFAULT_UPLOAD_LIMIT = 32 * 1024 * 1024
+DEFAULT_UPLOAD_LIMIT = 256 * 1024 * 1024
 WEATHER_CACHE_SECONDS = 15 * 60
 REPO_ROOT = Path(__file__).resolve().parents[2]
 THUMBNAIL_SIZE = (320, 320)

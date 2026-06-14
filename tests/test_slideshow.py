@@ -295,6 +295,13 @@ def test_admin_upload_rejects_unsafe_and_oversized_files(tmp_path):
     assert oversized.status_code == 413
 
 
+def test_admin_default_upload_limit_supports_photo_batches(tmp_path):
+    store = ConfigStore(tmp_path / "config.json", AppConfig())
+    app = create_app(tmp_path, store)
+
+    assert app.config["MAX_CONTENT_LENGTH"] == 256 * 1024 * 1024
+
+
 def image_upload(color: str, filename: str) -> tuple[BytesIO, str]:
     image_bytes = BytesIO()
     Image.new("RGB", (4, 4), color).save(image_bytes, format="PNG")
