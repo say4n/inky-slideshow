@@ -363,6 +363,24 @@ def test_admin_thumbnail_route_creates_small_jpeg(tmp_path):
         assert image.size == (320, 320)
 
 
+def test_admin_thumbnail_honors_exif_orientation(tmp_path):
+    image = Image.new("RGB", (800, 400), "white")
+    image.paste((0, 0, 0), (0, 0, 400, 400))
+    exif = image.getexif()
+    exif[274] = 6
+    image.save(tmp_path / "oriented.jpg", exif=exif, quality=95)
+    store = ConfigStore(tmp_path / "config.json", AppConfig())
+
+    response = create_app(tmp_path, store).test_client().get("/photos/oriented.jpg/thumbnail")
+
+    assert response.status_code == 200
+    thumbnail_path = next((tmp_path / ".thumbnails").glob("oriented.jpg.*.jpg"))
+    with Image.open(thumbnail_path) as thumbnail:
+        assert thumbnail.size == (320, 320)
+        assert thumbnail.getpixel((170, 20))[0] < 80
+        assert thumbnail.getpixel((170, 300))[0] > 175
+
+
 def test_admin_weather_preview_uses_cache(monkeypatch, tmp_path):
     store = ConfigStore(tmp_path / "config.json", AppConfig())
     rendered = Image.new("RGB", (8, 8), "white")

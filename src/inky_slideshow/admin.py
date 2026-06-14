@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from flask import Flask, Response, abort, redirect, request, send_file
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from .slideshow import (
@@ -230,6 +230,7 @@ def thumbnail_for_photo(
         if thumbnail_path.exists():
             return thumbnail_path
         with Image.open(photo_path) as image:
+            image = ImageOps.exif_transpose(image)
             image.thumbnail(size)
             thumbnail = Image.new("RGB", size, "white")
             image = image.convert("RGB")
