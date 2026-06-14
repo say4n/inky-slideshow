@@ -162,6 +162,9 @@ if [[ "${INSTALLER_REEXEC}" != "1" ]]; then
 fi
 
 "${SUDO[@]}" chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${INSTALL_DIR}" "${PHOTO_DIR}" "$(dirname "${CONFIG_PATH}")"
+if [[ -d "${INSTALL_DIR}/.venv" ]]; then
+  "${SUDO[@]}" chmod -R u+rwX "${INSTALL_DIR}/.venv"
+fi
 
 run_as_service_user python3 -m venv "${INSTALL_DIR}/.venv"
 run_as_service_user "${INSTALL_DIR}/.venv/bin/python" -m pip install --upgrade pip wheel
