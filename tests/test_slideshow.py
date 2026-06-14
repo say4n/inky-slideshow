@@ -43,6 +43,13 @@ def test_config_store_creates_and_reloads_defaults(tmp_path):
 def test_managed_photo_path_rejects_unsafe_names(tmp_path):
     assert managed_photo_path(tmp_path, "frame.jpg") == (tmp_path / "frame.jpg").resolve()
     assert managed_photo_path(tmp_path, "frame.heic") == (tmp_path / "frame.heic").resolve()
+    assert managed_photo_path(tmp_path, "20230619_072101~2.jpeg") == (
+        tmp_path / "20230619_072101~2.jpeg"
+    ).resolve()
+    assert managed_photo_path(tmp_path, "family photo (edited)…v2.jpeg") == (
+        tmp_path / "family photo (edited)…v2.jpeg"
+    ).resolve()
+    assert managed_photo_path(tmp_path, "scan..final.jpg") == (tmp_path / "scan..final.jpg").resolve()
 
     with pytest.raises(ValueError):
         managed_photo_path(tmp_path, "../frame.jpg")
@@ -361,6 +368,20 @@ def test_admin_thumbnail_route_creates_small_jpeg(tmp_path):
     assert len(thumbnails) == 1
     with Image.open(thumbnails[0]) as image:
         assert image.size == (320, 320)
+
+
+def test_admin_thumbnail_route_accepts_tilde_filenames(tmp_path):
+    filename = "family photo (edited)…20230619_072101~2.jpeg"
+    Image.new("RGB", (1200, 800), "black").save(tmp_path / filename)
+    store = ConfigStore(tmp_path / "config.json", AppConfig())
+    client = create_app(tmp_path, store).test_client()
+
+    page_response = client.get("/")
+    response = client.get("/photos/family%20photo%20%28edited%29%E2%80%A620230619_072101%7E2.jpeg/thumbnail")
+
+    assert b"/photos/family%20photo%20%28edited%29%E2%80%A620230619_072101%7E2.jpeg/thumbnail" in page_response.data
+    assert response.status_code == 200
+    assert response.mimetype == "image/jpeg"
 
 
 def test_admin_thumbnail_honors_exif_orientation(tmp_path):

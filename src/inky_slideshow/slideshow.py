@@ -313,8 +313,9 @@ def managed_photo_path(photo_dir: Path, filename: str) -> Path:
 def _safe_photo_filename(filename: str) -> str | None:
     if not filename or Path(filename).name != filename:
         return None
-    cleaned = "".join(char if char.isalnum() or char in "._-" else "_" for char in filename)
-    return cleaned if cleaned == filename else None
+    if "\x00" in filename:
+        return None
+    return filename
 
 
 def fit_photo(path: Path, resolution: tuple[int, int]) -> Image.Image:

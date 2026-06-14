@@ -260,7 +260,7 @@ def escape_html(value: Any) -> str:
 def photo_url(filename: str) -> str:
     from urllib.parse import quote
 
-    return quote(filename)
+    return quote(filename, safe="").replace("~", "%7E")
 
 
 def render_page(config: AppConfig, photos: list[str]) -> str:
