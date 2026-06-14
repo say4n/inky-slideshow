@@ -290,17 +290,23 @@ def test_admin_upload_rejects_unsafe_and_oversized_files(tmp_path):
         content_type="multipart/form-data",
     )
 
-    assert unsafe.status_code == 400
+    assert unsafe.status_code == 302
+    assert unsafe.location == "/?uploaded=0&failed=1"
     assert oversized.status_code == 413
+
+
+def image_upload(color: str, filename: str) -> tuple[BytesIO, str]:
+    image_bytes = BytesIO()
+    Image.new("RGB", (4, 4), color).save(image_bytes, format="PNG")
+    image_bytes.seek(0)
+    return image_bytes, filename
 
 
 def test_admin_upload_validates_and_saves_photo(monkeypatch, tmp_path):
     calls = []
     store = ConfigStore(tmp_path / "config.json", AppConfig())
     app = create_app(tmp_path, store)
-    image_bytes = BytesIO()
-    Image.new("RGB", (4, 4), "white").save(image_bytes, format="PNG")
-    image_bytes.seek(0)
+    image_bytes, filename = image_upload("white", "photo.png")
 
     def fake_validate(path):
         calls.append(path)
@@ -309,13 +315,72 @@ def test_admin_upload_validates_and_saves_photo(monkeypatch, tmp_path):
 
     response = app.test_client().post(
         "/photos",
-        data={"photo": (image_bytes, "photo.png")},
+        data={"photo": (image_bytes, filename)},
         content_type="multipart/form-data",
     )
 
     assert response.status_code == 302
+    assert response.location == "/?uploaded=1&failed=0"
     assert (tmp_path / "photo.png").exists()
     assert calls
+
+
+def test_admin_upload_saves_multiple_photos(tmp_path):
+    store = ConfigStore(tmp_path / "config.json", AppConfig())
+    app = create_app(tmp_path, store)
+
+    response = app.test_client().post(
+        "/photos",
+        data={
+            "photo": [
+                image_upload("white", "one.png"),
+                image_upload("black", "two.png"),
+            ]
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 302
+    assert response.location == "/?uploaded=2&failed=0"
+    assert (tmp_path / "one.png").exists()
+    assert (tmp_path / "two.png").exists()
+
+
+def test_admin_upload_skips_invalid_files_in_batch(tmp_path):
+    store = ConfigStore(tmp_path / "config.json", AppConfig())
+    app = create_app(tmp_path, store)
+
+    response = app.test_client().post(
+        "/photos",
+        data={
+            "photo": [
+                image_upload("white", "valid.png"),
+                (BytesIO(b"not an image"), "broken.png"),
+                (BytesIO(b"unsafe"), "../unsafe.png"),
+            ]
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Uploaded 1 image; skipped 2 files." in response.data
+    assert (tmp_path / "valid.png").exists()
+    assert not (tmp_path / "broken.png").exists()
+    assert not (tmp_path / "unsafe.png").exists()
+
+
+def test_admin_upload_rejects_empty_upload(tmp_path):
+    store = ConfigStore(tmp_path / "config.json", AppConfig())
+    app = create_app(tmp_path, store)
+
+    response = app.test_client().post(
+        "/photos",
+        data={},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 400
 
 
 def test_admin_rotate_and_delete_photo(monkeypatch, tmp_path):

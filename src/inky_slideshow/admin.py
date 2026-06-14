@@ -77,7 +77,9 @@ def create_app(
     def index() -> str:
         with lock:
             photos = [path.name for path in list_photos(photo_dir)]
-        return render_page(config_store.load(), photos)
+        uploaded = non_negative_int(request.args.get("uploaded"))
+        failed = non_negative_int(request.args.get("failed"))
+        return render_page(config_store.load(), photos, uploaded=uploaded, failed=failed)
 
     @app.get("/admin.css")
     def admin_css() -> Response:
@@ -116,24 +118,31 @@ def create_app(
 
     @app.post("/photos")
     def upload_photo() -> Response | tuple[str, int]:
-        uploaded = request.files.get("photo")
-        if uploaded is None or not uploaded.filename:
+        uploaded_files = [uploaded for uploaded in request.files.getlist("photo") if uploaded.filename]
+        if not uploaded_files:
             return "No photo uploaded", 400
-        try:
-            target = managed_photo_path(photo_dir, uploaded.filename)
-        except ValueError:
-            return "Unsupported or unsafe filename", 400
 
-        temp_path = upload_dir / f"{time.monotonic_ns()}-{target.name}"
-        try:
-            uploaded.save(temp_path)
-            validate_image(temp_path)
-            with lock:
-                temp_path.replace(target)
-        except Exception:
-            temp_path.unlink(missing_ok=True)
-            raise
-        return redirect("/")
+        saved = 0
+        failed = 0
+        for uploaded in uploaded_files:
+            try:
+                target = managed_photo_path(photo_dir, uploaded.filename)
+            except ValueError:
+                failed += 1
+                continue
+
+            temp_path = upload_dir / f"{time.monotonic_ns()}-{target.name}"
+            try:
+                uploaded.save(temp_path)
+                validate_image(temp_path)
+                with lock:
+                    temp_path.replace(target)
+                saved += 1
+            except Exception:
+                temp_path.unlink(missing_ok=True)
+                failed += 1
+
+        return redirect(f"/?uploaded={saved}&failed={failed}")
 
     @app.get("/photos/<path:filename>")
     def photo(filename: str) -> Response:
@@ -205,6 +214,16 @@ def positive_int(value: str | None, fallback: int) -> int:
     return parsed if parsed > 0 else fallback
 
 
+def non_negative_int(value: str | None) -> int | None:
+    if value is None:
+        return None
+    try:
+        parsed = int(value)
+    except ValueError:
+        return None
+    return parsed if parsed >= 0 else None
+
+
 def float_value(value: str | None, fallback: float) -> float:
     try:
         return float(value or "")
@@ -263,9 +282,15 @@ def photo_url(filename: str) -> str:
     return quote(filename, safe="").replace("~", "%7E")
 
 
-def render_page(config: AppConfig, photos: list[str]) -> str:
+def render_page(
+    config: AppConfig,
+    photos: list[str],
+    uploaded: int | None = None,
+    failed: int | None = None,
+) -> str:
     orientation = normalize_orientation(config.frame_orientation)
     photo_cards = "\n".join(render_photo_card(photo, orientation) for photo in photos)
+    upload_message = render_upload_message(uploaded, failed)
     weather_cache_key = int(time.time())
     return f"""<!doctype html>
 <html lang="en">
@@ -306,11 +331,12 @@ def render_page(config: AppConfig, photos: list[str]) -> str:
           </section>
 
           <section class="panel">
-            <h2 class="mb-5 text-lg font-black">Upload Photo</h2>
+            <h2 class="mb-5 text-lg font-black">Upload Images</h2>
             <form class="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end" action="/photos" method="post" enctype="multipart/form-data">
-              <label class="field-label">Image file <input class="field-input" name="photo" type="file" accept=".png,.jpg,.jpeg,.heic,.heif,image/png,image/jpeg,image/heic,image/heif" required></label>
+              <label class="field-label">Image files <input class="field-input" name="photo" type="file" accept=".png,.jpg,.jpeg,.heic,.heif,image/png,image/jpeg,image/heic,image/heif" multiple required></label>
               <button class="btn" type="submit">Upload</button>
             </form>
+            {upload_message}
           </section>
         </div>
 
@@ -335,6 +361,24 @@ def render_page(config: AppConfig, photos: list[str]) -> str:
     </main>
   </body>
 </html>"""
+
+
+def render_upload_message(uploaded: int | None, failed: int | None) -> str:
+    if uploaded is None and failed is None:
+        return ""
+    uploaded_count = uploaded or 0
+    failed_count = failed or 0
+    if uploaded_count and failed_count:
+        uploaded_label = "images" if uploaded_count != 1 else "image"
+        failed_label = "files" if failed_count != 1 else "file"
+        message = f"Uploaded {uploaded_count} {uploaded_label}; skipped {failed_count} {failed_label}."
+    elif uploaded_count:
+        message = f"Uploaded {uploaded_count} image{'s' if uploaded_count != 1 else ''}."
+    elif failed_count:
+        message = f"Skipped {failed_count} file{'s' if failed_count != 1 else ''}."
+    else:
+        message = "No images were uploaded."
+    return f'<p class="mt-3 rounded-lg border border-stone-300 bg-white p-3 text-sm text-stone-600">{escape_html(message)}</p>'
 
 
 def render_photo_card(photo: str, orientation: str) -> str:
