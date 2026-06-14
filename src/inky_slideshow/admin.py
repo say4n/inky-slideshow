@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from flask import Flask, Response, abort, redirect, request, send_file
+from PIL import Image, UnidentifiedImageError
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from .slideshow import (
@@ -27,6 +28,7 @@ from .slideshow import (
 DEFAULT_UPLOAD_LIMIT = 32 * 1024 * 1024
 WEATHER_CACHE_SECONDS = 15 * 60
 REPO_ROOT = Path(__file__).resolve().parents[2]
+THUMBNAIL_SIZE = (320, 320)
 
 
 class WeatherCache:
@@ -59,6 +61,8 @@ def create_app(
     photo_dir.mkdir(parents=True, exist_ok=True)
     upload_dir = photo_dir / ".uploads"
     upload_dir.mkdir(parents=True, exist_ok=True)
+    thumbnail_dir = photo_dir / ".thumbnails"
+    thumbnail_dir.mkdir(parents=True, exist_ok=True)
     lock = photo_lock or threading.RLock()
     cache = weather_cache or WeatherCache()
 
@@ -141,6 +145,20 @@ def create_app(
             abort(404)
         return send_file(target)
 
+    @app.get("/photos/<path:filename>/thumbnail")
+    def thumbnail(filename: str) -> Response:
+        try:
+            target = managed_photo_path(photo_dir, filename)
+        except ValueError:
+            abort(404)
+        if not target.exists():
+            abort(404)
+        try:
+            thumbnail_path = thumbnail_for_photo(target, thumbnail_dir, lock)
+        except (OSError, UnidentifiedImageError):
+            abort(404)
+        return send_file(thumbnail_path, mimetype="image/jpeg")
+
     @app.post("/photos/<path:filename>/delete")
     def delete_photo(filename: str) -> Response:
         try:
@@ -149,6 +167,7 @@ def create_app(
             return redirect("/")
         with lock:
             target.unlink(missing_ok=True)
+            cleanup_old_thumbnails(thumbnail_dir, target.name)
         return redirect("/")
 
     @app.post("/photos/<path:filename>/rotate")
@@ -191,6 +210,39 @@ def float_value(value: str | None, fallback: float) -> float:
         return float(value or "")
     except ValueError:
         return fallback
+
+
+def thumbnail_for_photo(
+    photo_path: Path,
+    thumbnail_dir: Path,
+    photo_lock: threading.RLock,
+    size: tuple[int, int] = THUMBNAIL_SIZE,
+) -> Path:
+    thumbnail_dir.mkdir(parents=True, exist_ok=True)
+    stat = photo_path.stat()
+    thumbnail_path = thumbnail_dir / f"{photo_path.name}.{stat.st_mtime_ns}.{stat.st_size}.jpg"
+    if thumbnail_path.exists():
+        return thumbnail_path
+
+    with photo_lock:
+        stat = photo_path.stat()
+        thumbnail_path = thumbnail_dir / f"{photo_path.name}.{stat.st_mtime_ns}.{stat.st_size}.jpg"
+        if thumbnail_path.exists():
+            return thumbnail_path
+        with Image.open(photo_path) as image:
+            image.thumbnail(size)
+            thumbnail = Image.new("RGB", size, "white")
+            image = image.convert("RGB")
+            thumbnail.paste(image, ((size[0] - image.width) // 2, (size[1] - image.height) // 2))
+            thumbnail.save(thumbnail_path, format="JPEG", quality=82, optimize=True)
+        cleanup_old_thumbnails(thumbnail_dir, photo_path.name, thumbnail_path)
+        return thumbnail_path
+
+
+def cleanup_old_thumbnails(thumbnail_dir: Path, photo_name: str, keep: Path | None = None) -> None:
+    for path in thumbnail_dir.glob(f"{photo_name}.*.jpg"):
+        if path != keep:
+            path.unlink(missing_ok=True)
 
 
 def escape_html(value: Any) -> str:
@@ -290,7 +342,7 @@ def render_photo_card(photo: str, orientation: str) -> str:
     return f"""
         <article class="rounded-lg border border-stone-300 bg-white p-3">
           <div class="flex items-center justify-center overflow-hidden border border-stone-300 bg-white {preview_shape}">
-            <img class="h-full w-full object-contain" src="/photos/{encoded}" alt="{escape_html(photo)}">
+            <img class="h-full w-full object-contain" src="/photos/{encoded}/thumbnail" alt="{escape_html(photo)}" loading="lazy">
           </div>
           <p class="my-3 truncate text-xs font-bold text-stone-600" title="{escape_html(photo)}">{escape_html(photo)}</p>
           <div class="grid grid-cols-[1fr_1fr_1.3fr] gap-2">

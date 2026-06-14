@@ -314,6 +314,10 @@ def test_admin_upload_validates_and_saves_photo(monkeypatch, tmp_path):
 def test_admin_rotate_and_delete_photo(monkeypatch, tmp_path):
     photo = tmp_path / "photo.jpg"
     photo.write_bytes(b"image")
+    thumbnail_dir = tmp_path / ".thumbnails"
+    thumbnail_dir.mkdir()
+    stale_thumbnail = thumbnail_dir / "photo.jpg.123.5.jpg"
+    stale_thumbnail.write_bytes(b"stale")
     store = ConfigStore(tmp_path / "config.json", AppConfig())
     app = create_app(tmp_path, store)
     rotations = []
@@ -331,6 +335,32 @@ def test_admin_rotate_and_delete_photo(monkeypatch, tmp_path):
     assert rotations == [(photo.resolve(), 90)]
     assert delete_response.status_code == 302
     assert not photo.exists()
+    assert not stale_thumbnail.exists()
+
+
+def test_admin_gallery_uses_thumbnail_urls(tmp_path):
+    Image.new("RGB", (12, 8), "white").save(tmp_path / "photo.jpg")
+    store = ConfigStore(tmp_path / "config.json", AppConfig())
+
+    response = create_app(tmp_path, store).test_client().get("/")
+
+    assert response.status_code == 200
+    assert b"/photos/photo.jpg/thumbnail" in response.data
+    assert b'src="/photos/photo.jpg"' not in response.data
+
+
+def test_admin_thumbnail_route_creates_small_jpeg(tmp_path):
+    Image.new("RGB", (1200, 800), "black").save(tmp_path / "large.jpg")
+    store = ConfigStore(tmp_path / "config.json", AppConfig())
+
+    response = create_app(tmp_path, store).test_client().get("/photos/large.jpg/thumbnail")
+
+    assert response.status_code == 200
+    assert response.mimetype == "image/jpeg"
+    thumbnails = list((tmp_path / ".thumbnails").glob("large.jpg.*.jpg"))
+    assert len(thumbnails) == 1
+    with Image.open(thumbnails[0]) as image:
+        assert image.size == (320, 320)
 
 
 def test_admin_weather_preview_uses_cache(monkeypatch, tmp_path):
