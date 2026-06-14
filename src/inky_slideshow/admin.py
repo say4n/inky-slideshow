@@ -77,7 +77,10 @@ def create_app(
 
     @app.get("/admin.css")
     def admin_css() -> Response:
-        return send_file(REPO_ROOT / "admin" / "public" / "admin.css", mimetype="text/css")
+        css_path = Path.cwd() / "admin" / "public" / "admin.css"
+        if not css_path.exists():
+            css_path = REPO_ROOT / "admin" / "public" / "admin.css"
+        return send_file(css_path, mimetype="text/css")
 
     @app.get("/weather-screen")
     def weather_screen() -> Response:

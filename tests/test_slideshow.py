@@ -353,6 +353,20 @@ def test_admin_weather_preview_uses_cache(monkeypatch, tmp_path):
     assert calls["cache"] == 1
 
 
+def test_admin_css_serves_from_working_directory(monkeypatch, tmp_path):
+    css_dir = tmp_path / "admin" / "public"
+    css_dir.mkdir(parents=True)
+    (css_dir / "admin.css").write_text(".panel{display:block}\n")
+    store = ConfigStore(tmp_path / "config.json", AppConfig())
+    monkeypatch.chdir(tmp_path)
+
+    response = create_app(tmp_path, store).test_client().get("/admin.css")
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/css"
+    assert b".panel" in response.data
+
+
 def test_weather_cache_reuses_fresh_snapshot(monkeypatch):
     snapshots = [
         WeatherSnapshot(
