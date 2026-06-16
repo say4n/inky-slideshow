@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -10,17 +11,19 @@ from flask import Flask, Response, abort, redirect, request, send_file
 from PIL import Image, ImageOps, UnidentifiedImageError
 from werkzeug.exceptions import RequestEntityTooLarge
 
+from .render_weather import render_weather_screen
 from .slideshow import (
     ALLOWED_EXTENSIONS,
     AppConfig,
     ConfigStore,
+    DisplayState,
+    DisplayStatus,
     WeatherClient,
     WeatherSnapshot,
     list_photos,
     managed_photo_path,
     normalize_orientation,
     oriented_resolution,
-    render_weather_screen,
     rotate_photo,
 )
 
@@ -56,6 +59,7 @@ def create_app(
     config_store: ConfigStore,
     photo_lock: threading.RLock | None = None,
     weather_cache: WeatherCache | None = None,
+    display_state: DisplayState | None = None,
     upload_limit: int = DEFAULT_UPLOAD_LIMIT,
 ) -> Flask:
     photo_dir.mkdir(parents=True, exist_ok=True)
@@ -79,7 +83,8 @@ def create_app(
             photos = [path.name for path in list_photos(photo_dir)]
         uploaded = non_negative_int(request.args.get("uploaded"))
         failed = non_negative_int(request.args.get("failed"))
-        return render_page(config_store.load(), photos, uploaded=uploaded, failed=failed)
+        status = display_state.snapshot() if display_state is not None else DisplayStatus(mode="admin")
+        return render_page(config_store.load(), photos, status, uploaded=uploaded, failed=failed)
 
     @app.get("/admin.css")
     def admin_css() -> Response:
@@ -204,9 +209,16 @@ def run_admin_server(
     config_store: ConfigStore,
     photo_lock: threading.RLock | None = None,
     weather_cache: WeatherCache | None = None,
+    display_state: DisplayState | None = None,
 ) -> None:
     config = config_store.load()
-    app = create_app(photo_dir, config_store, photo_lock=photo_lock, weather_cache=weather_cache)
+    app = create_app(
+        photo_dir,
+        config_store,
+        photo_lock=photo_lock,
+        weather_cache=weather_cache,
+        display_state=display_state,
+    )
     app.run(host=config.host, port=config.port, threaded=True, use_reloader=False)
 
 
@@ -301,6 +313,7 @@ def photo_url(filename: str) -> str:
 def render_page(
     config: AppConfig,
     photos: list[str],
+    display_status: DisplayStatus,
     uploaded: int | None = None,
     failed: int | None = None,
 ) -> str:
@@ -364,6 +377,7 @@ def render_page(
             </div>
           </div>
           <p class="mt-3 text-sm text-stone-600">This preview uses the same Python renderer as the e-ink frame.</p>
+          {render_display_status(display_status)}
         </section>
       </div>
 
@@ -377,6 +391,78 @@ def render_page(
     </main>
   </body>
 </html>"""
+
+
+def render_display_status(status: DisplayStatus) -> str:
+    label = display_mode_label(status.mode)
+    detail = status.detail or display_mode_detail(status.mode)
+    started = display_started_label(status.started_at)
+    duration = display_duration_label(status.duration_seconds)
+    duration_row = (
+        f"""
+              <div>
+                <dt class="text-xs font-bold uppercase text-stone-500">Duration</dt>
+                <dd class="mt-1 font-bold text-stone-950">{escape_html(duration)}</dd>
+              </div>"""
+        if duration
+        else ""
+    )
+    return f"""
+          <section class="mt-5 rounded-lg border border-stone-300 bg-white p-4">
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <h3 class="text-sm font-black uppercase text-stone-500">Display State</h3>
+                <p class="mt-1 text-2xl font-black text-stone-950">{escape_html(label)}</p>
+              </div>
+              <span class="rounded-lg border border-stone-300 px-3 py-1 text-xs font-bold uppercase text-stone-600">{escape_html(status.mode)}</span>
+            </div>
+            <dl class="mt-4 grid gap-3 sm:grid-cols-2">
+              <div>
+                <dt class="text-xs font-bold uppercase text-stone-500">Current</dt>
+                <dd class="mt-1 break-words font-bold text-stone-950">{escape_html(detail)}</dd>
+              </div>
+              <div>
+                <dt class="text-xs font-bold uppercase text-stone-500">Since</dt>
+                <dd class="mt-1 font-bold text-stone-950">{escape_html(started)}</dd>
+              </div>{duration_row}
+            </dl>
+          </section>"""
+
+
+def display_mode_label(mode: str) -> str:
+    return {
+        "photo": "Showing Photo",
+        "weather": "Showing Weather",
+        "idle": "Idle",
+        "error": "Display Error",
+        "admin": "Admin Only",
+        "starting": "Starting",
+    }.get(mode, mode.replace("_", " ").title())
+
+
+def display_mode_detail(mode: str) -> str:
+    return {
+        "admin": "Display worker is not running in admin-only mode.",
+        "starting": "Waiting for the first display refresh.",
+    }.get(mode, "No display details available.")
+
+
+def display_started_label(value: str | None) -> str:
+    if not value:
+        return "Not yet"
+    try:
+        started = datetime.fromisoformat(value)
+    except ValueError:
+        return value
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    return started.astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+
+
+def display_duration_label(value: int | None) -> str | None:
+    if value is None:
+        return None
+    return f"{value} second{'s' if value != 1 else ''}"
 
 
 def render_upload_message(uploaded: int | None, failed: int | None) -> str:

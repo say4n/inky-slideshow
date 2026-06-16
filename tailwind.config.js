@@ -1,5 +1,5 @@
 export default {
-  content: ["./admin/**/*.js"],
+  content: ["./admin/**/*.{js,css}", "./src/**/*.py"],
   theme: {
     extend: {
       fontFamily: {

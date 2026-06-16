@@ -13,6 +13,7 @@ from inky_slideshow.admin import create_app
 from inky_slideshow.slideshow import (
     AppConfig,
     ConfigStore,
+    DisplayState,
     WeatherSnapshot,
     fit_photo,
     image_for_display,
@@ -178,7 +179,7 @@ def test_rotate_photo_updates_image_dimensions(tmp_path):
 def test_display_worker_retries_after_failure(monkeypatch, tmp_path):
     calls = {"display": 0, "sleep": 0}
 
-    def fake_display_loop(photo_dir, config_store, photo_lock=None, weather_cache=None):
+    def fake_display_loop(photo_dir, config_store, photo_lock=None, weather_cache=None, display_state=None):
         calls["display"] += 1
         if calls["display"] == 1:
             raise RuntimeError("display failed")
@@ -247,6 +248,63 @@ def test_display_loop_shows_weather_after_each_photo(monkeypatch, tmp_path):
     assert events[0] is photo_image
     assert events[1] is weather_image
     assert sleeps == [7, 3]
+
+
+def test_display_loop_updates_display_state(monkeypatch, tmp_path):
+    states = []
+
+    class FakeDisplay:
+        WHITE = 0
+        resolution = (800, 480)
+
+        def set_border(self, color):
+            self.border = color
+
+        def set_image(self, image):
+            self.current_image = image
+
+        def show(self):
+            pass
+
+    fake_display = FakeDisplay()
+    fake_auto = types.ModuleType("inky.auto")
+    fake_auto.auto = lambda ask_user=True: fake_display
+    monkeypatch.setitem(sys.modules, "inky", types.ModuleType("inky"))
+    monkeypatch.setitem(sys.modules, "inky.auto", fake_auto)
+
+    photo = tmp_path / "photo.jpg"
+    photo.write_bytes(b"not used")
+    store = ConfigStore(tmp_path / "config.json", AppConfig(photo_seconds=7, weather_seconds=3))
+    display_state = DisplayState()
+    original_update = display_state.update
+
+    def record_update(mode, detail=None, duration_seconds=None):
+        original_update(mode, detail, duration_seconds)
+        states.append(display_state.snapshot())
+
+    monkeypatch.setattr(display_state, "update", record_update)
+    monkeypatch.setattr(slideshow, "list_photos", lambda photo_dir: [photo])
+    monkeypatch.setattr(slideshow, "fit_photo", lambda path, resolution: Image.new("RGB", (800, 480), "black"))
+    monkeypatch.setattr(slideshow, "render_weather_screen", lambda resolution, config, snapshot: Image.new("RGB", (800, 480), "white"))
+    monkeypatch.setattr(slideshow.WeatherClient, "fetch_or_cached", lambda self, config: None)
+    monkeypatch.setattr(slideshow.random, "randint", lambda start, stop: 0)
+
+    sleeps = []
+
+    def fake_sleep(seconds):
+        sleeps.append(seconds)
+        if len(sleeps) == 2:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(slideshow.time, "sleep", fake_sleep)
+
+    with pytest.raises(KeyboardInterrupt):
+        slideshow.run_display_loop(tmp_path, store, display_state=display_state)
+
+    assert [(state.mode, state.detail, state.duration_seconds) for state in states] == [
+        ("photo", "photo.jpg", 7),
+        ("weather", "London", 3),
+    ]
 
 
 def test_admin_settings_updates_config(tmp_path):
@@ -442,6 +500,20 @@ def test_admin_gallery_uses_thumbnail_urls(tmp_path):
     assert b'src="/photos/photo.jpg"' not in response.data
 
 
+def test_admin_page_shows_current_display_state(tmp_path):
+    store = ConfigStore(tmp_path / "config.json", AppConfig())
+    display_state = DisplayState()
+    display_state.update("photo", "holiday.jpg", 7)
+
+    response = create_app(tmp_path, store, display_state=display_state).test_client().get("/")
+
+    assert response.status_code == 200
+    assert b"Display State" in response.data
+    assert b"Showing Photo" in response.data
+    assert b"holiday.jpg" in response.data
+    assert b"7 seconds" in response.data
+
+
 def test_admin_thumbnail_route_creates_small_jpeg(tmp_path):
     Image.new("RGB", (1200, 800), "black").save(tmp_path / "large.jpg")
     store = ConfigStore(tmp_path / "config.json", AppConfig())
@@ -561,13 +633,13 @@ def test_weather_cache_reuses_fresh_snapshot(monkeypatch):
 def test_cli_modes_branch_to_display_admin_or_combined(monkeypatch, tmp_path):
     events = []
 
-    def fake_display_loop(photo_dir, config_store, photo_lock=None, weather_cache=None):
+    def fake_display_loop(photo_dir, config_store, photo_lock=None, weather_cache=None, display_state=None):
         events.append(("display", photo_dir))
 
-    def fake_start_display_worker(photo_dir, config_store, photo_lock=None, weather_cache=None):
+    def fake_start_display_worker(photo_dir, config_store, photo_lock=None, weather_cache=None, display_state=None):
         events.append(("worker", photo_dir))
 
-    def fake_run_admin_server(photo_dir, config_store, photo_lock=None, weather_cache=None):
+    def fake_run_admin_server(photo_dir, config_store, photo_lock=None, weather_cache=None, display_state=None):
         events.append(("admin", photo_dir))
 
     monkeypatch.setattr(slideshow, "run_display_loop", fake_display_loop)
