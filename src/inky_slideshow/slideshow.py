@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ctypes
+import gc
 import json
 import random
 import threading
@@ -320,11 +322,24 @@ def _safe_photo_filename(filename: str) -> str | None:
 
 def fit_photo(path: Path, resolution: tuple[int, int]) -> Image.Image:
     with Image.open(path) as image:
+        image.draft("RGB", resolution)
         image = ImageOps.exif_transpose(image)
         image = ImageOps.contain(image.convert("RGB"), resolution)
         canvas = Image.new("RGB", resolution, "white")
         canvas.paste(image, ((resolution[0] - image.width) // 2, (resolution[1] - image.height) // 2))
         return canvas
+
+
+def trim_process_memory() -> None:
+    gc.collect()
+    try:
+        libc = ctypes.CDLL("libc.so.6")
+    except OSError:
+        return
+    try:
+        libc.malloc_trim(0)
+    except AttributeError:
+        return
 
 
 def validate_image(path: Path) -> None:
@@ -847,12 +862,15 @@ def run_display_loop(
             except (OSError, UnidentifiedImageError):
                 logger.exception("Skipping unreadable photo: {}", current_image)
             else:
-                inky_display.set_image(image_for_display(image, inky_display.resolution))
                 try:
+                    inky_display.set_image(image_for_display(image, inky_display.resolution))
                     inky_display.show()
                 except Exception:
                     logger.exception("Display refresh failed while showing photo: {}", current_image)
                     raise
+                finally:
+                    del image
+                    trim_process_memory()
             index += 1
             time.sleep(config.photo_seconds)
         else:
@@ -863,12 +881,15 @@ def run_display_loop(
         logger.info("Displaying weather screen")
         snapshot = weather_cache.get(config) if weather_cache is not None else weather_client.fetch_or_cached(config)
         weather_image = render_weather_screen(target_resolution, config, snapshot)
-        inky_display.set_image(image_for_display(weather_image, inky_display.resolution))
         try:
+            inky_display.set_image(image_for_display(weather_image, inky_display.resolution))
             inky_display.show()
         except Exception:
             logger.exception("Display refresh failed while showing weather screen")
             raise
+        finally:
+            del weather_image
+            trim_process_memory()
         time.sleep(config.weather_seconds)
 
 
