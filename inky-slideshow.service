@@ -7,7 +7,7 @@
  Type=simple
  User=sayan
  WorkingDirectory=/home/sayan/inky-slideshow/
- ExecStart=/home/sayan/inky-slideshow/.venv/bin/python /home/sayan/inky-slideshow/src/inky_slideshow/slideshow.py /home/sayan/images --mode combined --config /home/sayan/.config/inky-slideshow/config.json --photo-seconds 60 --weather-seconds 30 --host 0.0.0.0 --port 8080 --frame-orientation horizontal
+ ExecStart=/home/sayan/inky-slideshow/.venv/bin/inky-slideshow /home/sayan/images --mode combined --config /home/sayan/.config/inky-slideshow/config.json --photo-seconds 60 --weather-seconds 30 --host 0.0.0.0 --port 8080 --frame-orientation horizontal
  Restart=always
  RestartSec=10
 

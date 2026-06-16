@@ -31,6 +31,10 @@ dependencies = [
   "pillow-heif",
 ]
 
+[project.scripts]
+inky-render-weather = "inky_slideshow.render_weather:main"
+inky-slideshow = "inky_slideshow.slideshow:main"
+
 [project.urls]
 Documentation = "https://github.com/say4n/inky-slideshow#readme"
 Issues = "https://github.com/say4n/inky-slideshow/issues"
