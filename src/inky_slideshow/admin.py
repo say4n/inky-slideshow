@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -397,16 +397,9 @@ def render_display_status(status: DisplayStatus) -> str:
     label = display_mode_label(status.mode)
     detail = status.detail or display_mode_detail(status.mode)
     started = display_started_label(status.started_at)
-    duration = display_duration_label(status.duration_seconds)
-    duration_row = (
-        f"""
-              <div>
-                <dt class="text-xs font-bold uppercase text-stone-500">Duration</dt>
-                <dd class="mt-1 font-bold text-stone-950">{escape_html(duration)}</dd>
-              </div>"""
-        if duration
-        else ""
-    )
+    next_update_at = display_next_update_at(status.started_at, status.duration_seconds)
+    next_update = display_countdown_label(next_update_at)
+    next_update_attr = f' data-next-update-at="{escape_html(next_update_at)}"' if next_update_at else ""
     return f"""
           <section class="mt-5 rounded-lg border border-stone-300 bg-white p-4">
             <div class="flex items-start justify-between gap-4">
@@ -424,45 +417,73 @@ def render_display_status(status: DisplayStatus) -> str:
               <div>
                 <dt class="text-xs font-bold uppercase text-stone-500">Since</dt>
                 <dd class="mt-1 font-bold text-stone-950">{escape_html(started)}</dd>
-              </div>{duration_row}
+              </div>
+              <div>
+                <dt class="text-xs font-bold uppercase text-stone-500">Time to Next Update</dt>
+                <dd class="mt-1 font-bold text-stone-950" data-countdown{next_update_attr}>{escape_html(next_update)}</dd>
+              </div>
             </dl>
-          </section>"""
+          </section>
+          <script>
+            (() => {{
+              const labels = document.querySelectorAll("[data-countdown][data-next-update-at]");
+              if (!labels.length) {{
+                return;
+              }}
+
+              const formatCountdown = (milliseconds) => {{
+                const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
+                const minutes = Math.floor(totalSeconds / 60);
+                const seconds = totalSeconds % 60;
+                if (minutes > 0) {{
+                  return `${{minutes}}m ${{seconds.toString().padStart(2, "0")}}s`;
+                }}
+                return `${{seconds}} second${{seconds === 1 ? "" : "s"}}`;
+              }};
+
+              const updateCountdowns = () => {{
+                const now = Date.now();
+                labels.forEach((label) => {{
+                  const target = Date.parse(label.dataset.nextUpdateAt || "");
+                  label.textContent = Number.isNaN(target) ? "Not scheduled" : formatCountdown(target - now);
+                }});
+              }};
+
+              updateCountdowns();
+              window.setInterval(updateCountdowns, 1000);
+            }})();
+          </script>"""
 
 
-def display_mode_label(mode: str) -> str:
-    return {
-        "photo": "Showing Photo",
-        "weather": "Showing Weather",
-        "idle": "Idle",
-        "error": "Display Error",
-        "admin": "Admin Only",
-        "starting": "Starting",
-    }.get(mode, mode.replace("_", " ").title())
-
-
-def display_mode_detail(mode: str) -> str:
-    return {
-        "admin": "Display worker is not running in admin-only mode.",
-        "starting": "Waiting for the first display refresh.",
-    }.get(mode, "No display details available.")
-
-
-def display_started_label(value: str | None) -> str:
-    if not value:
-        return "Not yet"
+def display_next_update_at(started_at: str | None, duration_seconds: int | None) -> str | None:
+    if not started_at or duration_seconds is None:
+        return None
     try:
-        started = datetime.fromisoformat(value)
+        started = datetime.fromisoformat(started_at)
     except ValueError:
-        return value
+        return None
     if started.tzinfo is None:
         started = started.replace(tzinfo=timezone.utc)
-    return started.astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+    return (started + timedelta(seconds=duration_seconds)).isoformat()
 
 
-def display_duration_label(value: int | None) -> str | None:
-    if value is None:
-        return None
-    return f"{value} second{'s' if value != 1 else ''}"
+def display_countdown_label(next_update_at: str | None, now: datetime | None = None) -> str:
+    if not next_update_at:
+        return "Not scheduled"
+    try:
+        target = datetime.fromisoformat(next_update_at)
+    except ValueError:
+        return "Not scheduled"
+    if target.tzinfo is None:
+        target = target.replace(tzinfo=timezone.utc)
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    remaining = max(0, int((target - current).total_seconds() + 0.999))
+    minutes, seconds = divmod(remaining, 60)
+    if minutes:
+        return f"{minutes}m {seconds:02d}s"
+    return f"{seconds} second{'s' if seconds != 1 else ''}"
 
 
 def render_upload_message(uploaded: int | None, failed: int | None) -> str:
@@ -498,3 +519,33 @@ def render_photo_card(photo: str, orientation: str) -> str:
             <form action="/photos/{encoded}/delete" method="post"><button class="btn btn-danger w-full" type="submit">Delete</button></form>
           </div>
         </article>"""
+
+
+def display_mode_label(mode: str) -> str:
+    return {
+        "photo": "Showing Photo",
+        "weather": "Showing Weather",
+        "idle": "Idle",
+        "error": "Display Error",
+        "admin": "Admin Only",
+        "starting": "Starting",
+    }.get(mode, mode.replace("_", " ").title())
+
+
+def display_mode_detail(mode: str) -> str:
+    return {
+        "admin": "Display worker is not running in admin-only mode.",
+        "starting": "Waiting for the first display refresh.",
+    }.get(mode, "No display details available.")
+
+
+def display_started_label(value: str | None) -> str:
+    if not value:
+        return "Not yet"
+    try:
+        started = datetime.fromisoformat(value)
+    except ValueError:
+        return value
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    return started.astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")

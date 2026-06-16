@@ -1,7 +1,7 @@
 import sys
 import types
 from io import BytesIO
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from click.testing import CliRunner
@@ -511,7 +511,37 @@ def test_admin_page_shows_current_display_state(tmp_path):
     assert b"Display State" in response.data
     assert b"Showing Photo" in response.data
     assert b"holiday.jpg" in response.data
-    assert b"7 seconds" in response.data
+    assert b"Time to Next Update" in response.data
+    assert b"data-countdown" in response.data
+    assert b"data-next-update-at" in response.data
+    assert b"Duration" not in response.data
+
+
+def test_admin_display_state_shows_unscheduled_countdown_without_duration(tmp_path):
+    store = ConfigStore(tmp_path / "config.json", AppConfig())
+    display_state = DisplayState()
+    display_state.update("idle", "No photos found", None)
+
+    response = create_app(tmp_path, store, display_state=display_state).test_client().get("/")
+
+    assert response.status_code == 200
+    assert b"Time to Next Update" in response.data
+    assert b'data-countdown>Not scheduled</dd>' in response.data
+
+
+def test_display_countdown_helpers_format_next_update():
+    started_at = datetime(2026, 4, 13, 17, 40, tzinfo=timezone.utc).isoformat()
+    next_update_at = admin.display_next_update_at(started_at, 67)
+
+    assert next_update_at == "2026-04-13T17:41:07+00:00"
+    assert admin.display_countdown_label(
+        next_update_at,
+        now=datetime(2026, 4, 13, 17, 40, 6, 500000, tzinfo=timezone.utc),
+    ) == "1m 01s"
+    assert admin.display_countdown_label(
+        next_update_at,
+        now=datetime(2026, 4, 13, 17, 41, 7, tzinfo=timezone.utc) + timedelta(seconds=1),
+    ) == "0 seconds"
 
 
 def test_admin_thumbnail_route_creates_small_jpeg(tmp_path):
